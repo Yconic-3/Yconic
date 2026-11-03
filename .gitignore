@@ -1,0 +1,29 @@
+# 의존성
+node_modules/
+.pnpm-store/
+
+# 빌드 산출물
+dist/
+build/
+.next/
+.turbo/
+coverage/
+
+# 환경 변수 (API 키 등) — 절대 커밋하지 않는다
+.env
+.env.*
+!.env.example
+
+# Claude Code 개인 설정 (공유 설정은 .claude/settings.json)
+.claude/settings.local.json
+
+# 로그 및 임시 파일
+*.log
+*.tmp
+
+# OS / 에디터
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+*.swp
