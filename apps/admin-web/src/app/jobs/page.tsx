@@ -1,6 +1,6 @@
 "use client";
 
-import { DIFFICULTY_LABELS, EXERCISE_CATEGORY_LABELS, hasPermission } from "@yconic/shared-types";
+import { CONTENT_JOB_KIND_LABELS, DIFFICULTY_LABELS, EXERCISE_CATEGORY_LABELS, hasPermission } from "@yconic/shared-types";
 import Link from "next/link";
 import { useState } from "react";
 import { JobStatusBadge, isJobActive } from "@/components/status-badge";
@@ -43,7 +43,10 @@ export default function JobsPage() {
           <li key={j.id} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
-                <h2 className="truncate text-base font-semibold">{j.title}</h2>
+                <h2 className="truncate text-base font-semibold">
+                  {j.kind === "REANALYZE" && <span className="mr-2 rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-800">{CONTENT_JOB_KIND_LABELS[j.kind]}</span>}
+                  {j.title}
+                </h2>
                 <p className="text-xs text-slate-500">
                   {EXERCISE_CATEGORY_LABELS[j.category]} · {DIFFICULTY_LABELS[j.difficulty]} · {j.video.fileName} ({formatTimecode(j.video.durationSec)}, {formatBytes(j.video.sizeBytes)}) · 요청 {formatDateTime(j.createdAt)}
                 </p>
@@ -64,9 +67,16 @@ export default function JobsPage() {
             )}
             {j.status === "COMPLETED" && j.contentId && (
               <p className="mt-3 text-sm">
-                초안이 만들어졌습니다.{" "}
+                {j.kind === "REANALYZE" ? "새 분석 결과로 구간을 바꿨습니다." : "초안이 만들어졌습니다."}{" "}
                 <Link href={`/contents/${j.contentId}`} className="font-medium text-blue-700 hover:underline">
-                  초안 검토하기 →
+                  {j.kind === "REANALYZE" ? "콘텐츠 확인하기 →" : "초안 검토하기 →"}
+                </Link>
+              </p>
+            )}
+            {j.status !== "COMPLETED" && j.kind === "REANALYZE" && j.contentId && (
+              <p className="mt-2 text-sm">
+                <Link href={`/contents/${j.contentId}`} className="text-blue-700 hover:underline">
+                  대상 콘텐츠 열기 →
                 </Link>
               </p>
             )}

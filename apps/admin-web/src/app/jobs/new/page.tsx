@@ -79,12 +79,16 @@ export default function NewJobPage() {
     setBusy(true);
     setError(null);
     setProgress(0);
+    let uploadedId: string | null = null;
     try {
       const video = await api.uploadVideo(file, setProgress);
+      uploadedId = video.id;
       await api.createJob({ videoId: video.id, title, category, difficulty, requestNote });
       router.push("/jobs");
     } catch (err) {
       setError(errorMessage(err));
+      // 영상만 올라가고 작업 생성이 실패하면, 어디에도 연결되지 않은 영상이 남지 않게 지운다.
+      if (uploadedId) await api.deleteVideo(uploadedId).catch(() => undefined);
       setBusy(false);
       setProgress(null);
     }

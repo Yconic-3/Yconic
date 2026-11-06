@@ -23,9 +23,23 @@ export const CONTENT_JOB_STATUS_LABELS: Record<ContentJobStatus, string> = {
   FAILED: "실패",
 };
 
-/** 올린 영상 하나를 분석해 콘텐츠 초안을 만드는 작업 */
+/**
+ * 작업 종류
+ * - CREATE: 새로 올린 영상으로 콘텐츠 초안을 만든다
+ * - REANALYZE: 기존 콘텐츠의 영상을 다시 분석해 구간과 안내문을 새 결과로 바꾼다
+ */
+export const CONTENT_JOB_KINDS = ["CREATE", "REANALYZE"] as const;
+export type ContentJobKind = (typeof CONTENT_JOB_KINDS)[number];
+
+export const CONTENT_JOB_KIND_LABELS: Record<ContentJobKind, string> = {
+  CREATE: "새 콘텐츠 제작",
+  REANALYZE: "다시 분석",
+};
+
+/** 영상 하나를 분석하는 작업 */
 export interface ContentJob {
   id: Id;
+  kind: ContentJobKind;
   title: string;
   category: ExerciseCategory;
   difficulty: Difficulty;
@@ -36,7 +50,7 @@ export interface ContentJob {
   /** 0~100 */
   progress: number;
   failureReason: string | null;
-  /** 작업이 완료되어 생성된 콘텐츠 초안 ID */
+  /** CREATE: 완료 후 생성된 초안 ID (그 전에는 null) / REANALYZE: 다시 분석할 대상 콘텐츠 ID */
   contentId: Id | null;
   requestedBy: Id;
   createdAt: ISODateString;

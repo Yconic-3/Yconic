@@ -11,7 +11,8 @@ import {
   type SegmentKind,
 } from "@yconic/shared-types";
 import { useState } from "react";
-import { formatTimecode, parseTimecode, roundSec } from "@/lib/video";
+import { renumber, round1, splitSegmentAt } from "@/lib/timeline";
+import { formatTimecode, parseTimecode } from "@/lib/video";
 import { TtsStatusBadge } from "./status-badge";
 import { Button, Card, Field, Input, Select, Textarea } from "./ui";
 import { SEGMENT_COLORS } from "./video-player";
@@ -25,8 +26,6 @@ interface Props {
   dirty: boolean;
   canRequestTts: boolean;
   onRequestTts(segmentIds: string[]): void;
-  /** 영상이 있어 재생·현재 시각 사용이 가능한지 */
-  hasVideo: boolean;
   activeSegmentId: string | null;
   getCurrentTime(): number;
   onPlaySegment(segment: ExerciseSegment): void;
@@ -35,7 +34,7 @@ interface Props {
 }
 
 let localSeq = 0;
-function newId() {
+export function newLocalSegmentId() {
   return `new-${Date.now().toString(36)}-${(localSeq++).toString(36)}`;
 }
 
@@ -57,7 +56,7 @@ function TimeInput({ value, onCommit, disabled, label }: { value: number; onComm
       onBlur={() => {
         setEditing(false);
         const parsed = parseTimecode(text);
-        if (parsed !== null) onCommit(roundSec(parsed));
+        if (parsed !== null) onCommit(round1(parsed));
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter") e.currentTarget.blur();
@@ -74,7 +73,6 @@ export function SegmentEditor({
   dirty,
   canRequestTts,
   onRequestTts,
-  hasVideo,
   activeSegmentId,
   getCurrentTime,
   onPlaySegment,
@@ -83,9 +81,6 @@ export function SegmentEditor({
 }: Props) {
   function update(index: number, patch: Partial<ExerciseSegment>) {
     onChange(segments.map((s, i) => (i === index ? { ...s, ...patch } : s)));
-  }
-  function renumber(list: ExerciseSegment[]) {
-    return list.map((s, i) => ({ ...s, order: i + 1 }));
   }
   function move(index: number, dir: -1 | 1) {
     const target = index + dir;
@@ -108,11 +103,11 @@ export function SegmentEditor({
       renumber([
         ...segments,
         {
-          id: newId(),
+          id: newLocalSegmentId(),
           order: 0,
           kind: "EXERCISE",
-          startSec: roundSec(start),
-          endSec: roundSec(end),
+          startSec: round1(start),
+          endSec: round1(end),
           title: "",
           instruction: "",
           voiceGuide: "",
@@ -123,18 +118,8 @@ export function SegmentEditor({
     );
   }
   function splitAtCurrent(index: number) {
-    const s = segments[index]!;
-    const t = roundSec(getCurrentTime());
-    if (t <= s.startSec + 0.5 || t >= s.endSec - 0.5) return;
-    const first = { ...s, endSec: t };
-    const second: ExerciseSegment = {
-      ...s,
-      id: newId(),
-      startSec: t,
-      title: `${s.title} (2)`,
-      tts: { status: "NONE", audioUrl: null, generatedForText: null, failureReason: null },
-    };
-    onChange(renumber([...segments.slice(0, index), first, second, ...segments.slice(index + 1)]));
+    const next = splitSegmentAt(segments, index, getCurrentTime(), newLocalSegmentId);
+    if (next) onChange(next);
   }
 
   const ttsLocked = !canRequestTts || !editable || dirty;
@@ -162,8 +147,7 @@ export function SegmentEditor({
       }
     >
       <p className="mb-3 text-xs text-slate-500">
-        사용자 앱은 영상을 재생하다가 각 구간이 시작되는 시각에 음성 안내문을 읽어 줍니다.
-        {hasVideo ? " 영상을 원하는 곳에 멈추고 “현재” 버튼으로 시작·끝 시각을 잡을 수 있습니다." : ""}
+        사용자 앱은 영상을 재생하다가 각 구간이 시작되는 시각에 음성 안내문을 읽어 줍니다. 영상을 원하는 곳에 멈추고 &ldquo;현재&rdquo; 버튼으로 시작·끝 시각을 잡을 수 있습니다.
         {ttsHint && canRequestTts ? ` ${ttsHint}` : ""}
       </p>
       {segments.length === 0 && <p className="text-sm text-slate-500">아직 구간이 없습니다. 구간을 추가해 주세요.</p>}
@@ -180,13 +164,7 @@ export function SegmentEditor({
                 <div className="flex flex-wrap items-center gap-2">
                   <span className={`inline-block h-3 w-3 rounded-sm ${SEGMENT_COLORS[s.kind]}`} aria-hidden />
                   <h3 className="font-semibold">{i + 1}구간</h3>
-                  <Select
-                    aria-label={`${i + 1}구간 종류`}
-                    className="w-24 py-1"
-                    value={s.kind}
-                    disabled={!editable}
-                    onChange={(e) => update(i, { kind: e.target.value as SegmentKind })}
-                  >
+                  <Select aria-label={`${i + 1}구간 종류`} className="w-24 py-1" value={s.kind} disabled={!editable} onChange={(e) => update(i, { kind: e.target.value as SegmentKind })}>
                     {SEGMENT_KINDS.map((k) => (
                       <option key={k} value={k}>
                         {SEGMENT_KIND_LABELS[k]}
@@ -199,11 +177,9 @@ export function SegmentEditor({
                   <TtsStatusBadge status={s.tts.status} stale={stale} />
                 </div>
                 <div className="flex flex-wrap items-center gap-1">
-                  {hasVideo && (
-                    <Button className="px-2 py-1 text-xs" onClick={() => onPlaySegment(s)} title="이 구간부터 영상을 재생하고 안내문을 읽습니다">
-                      ▶ 구간 재생
-                    </Button>
-                  )}
+                  <Button className="px-2 py-1 text-xs" onClick={() => onPlaySegment(s)} title="이 구간부터 재생하고 안내문을 읽습니다">
+                    ▶ 구간 재생
+                  </Button>
                   {speechSupported && (
                     <Button className="px-2 py-1 text-xs" onClick={() => onListen(s)} title="브라우저 음성으로 안내문만 들어 봅니다">
                       🔊 안내 듣기
@@ -237,8 +213,8 @@ export function SegmentEditor({
                   <Field label="시작">
                     <div className="flex gap-1">
                       <TimeInput label={`${i + 1}구간 시작 시각`} value={s.startSec} disabled={!editable} onCommit={(sec) => update(i, { startSec: sec })} />
-                      {editable && hasVideo && (
-                        <Button className="px-2 py-1 text-xs" onClick={() => update(i, { startSec: roundSec(getCurrentTime()) })} title="영상의 현재 시각을 시작으로">
+                      {editable && (
+                        <Button className="px-2 py-1 text-xs" onClick={() => update(i, { startSec: round1(getCurrentTime()) })} title="재생 위치의 현재 시각을 시작으로">
                           현재
                         </Button>
                       )}
@@ -247,15 +223,15 @@ export function SegmentEditor({
                   <Field label="끝">
                     <div className="flex gap-1">
                       <TimeInput label={`${i + 1}구간 끝 시각`} value={s.endSec} disabled={!editable} onCommit={(sec) => update(i, { endSec: sec })} />
-                      {editable && hasVideo && (
-                        <Button className="px-2 py-1 text-xs" onClick={() => update(i, { endSec: roundSec(getCurrentTime()) })} title="영상의 현재 시각을 끝으로">
+                      {editable && (
+                        <Button className="px-2 py-1 text-xs" onClick={() => update(i, { endSec: round1(getCurrentTime()) })} title="재생 위치의 현재 시각을 끝으로">
                           현재
                         </Button>
                       )}
                     </div>
                   </Field>
-                  {editable && hasVideo && (
-                    <Button className="px-2 py-1 text-xs" onClick={() => splitAtCurrent(i)} title="영상의 현재 시각에서 이 구간을 둘로 나눕니다">
+                  {editable && (
+                    <Button className="px-2 py-1 text-xs" onClick={() => splitAtCurrent(i)} title="재생 위치의 현재 시각에서 이 구간을 둘로 나눕니다">
                       현재 시각에서 나누기
                     </Button>
                   )}

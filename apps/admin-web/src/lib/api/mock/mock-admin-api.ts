@@ -1,6 +1,7 @@
 import {
   CONTENT_STATUS_LABELS,
   CONTENT_TRANSITIONS,
+  EDITABLE_STATUSES,
   canEditContent,
   canPerformAction,
   hasPermission,
@@ -51,6 +52,12 @@ const JOB_STAGES: ContentJobStatus[] = ["QUEUED", "ANALYZING_VIDEO", "EXTRACTING
 
 const MAX_VIDEO_BYTES = 2 * 1024 * 1024 * 1024;
 
+const WORKER_ACTOR = { id: "content-worker", name: "content-worker", role: "EDITOR" as const };
+
+export function isActiveJob(job: Pick<ContentJob, "status">): boolean {
+  return job.status !== "COMPLETED" && job.status !== "FAILED";
+}
+
 /**
  * 브라우저 저장소를 백엔드 삼아 동작하는 모의 구현.
  * 권한 검사와 상태 전이 검증을 백엔드와 같은 규칙(shared-types)으로 수행해서,
@@ -88,6 +95,18 @@ export function createMockAdminApi(opts: MockAdminApiOptions): AdminApi {
     if (!hasPermission(user.role, p)) throw new AdminApiError("FORBIDDEN", "이 작업을 할 권한이 없습니다.");
   }
 
+  function requireEditable(user: AdminUser, content: ExerciseContent) {
+    if (!canEditContent(user.role, content.status)) {
+      throw new AdminApiError("FORBIDDEN", `${CONTENT_STATUS_LABELS[content.status]} 상태의 콘텐츠는 수정할 수 없거나 수정 권한이 없습니다.`);
+    }
+  }
+
+  function requireVersion(content: ExerciseContent, expected: number) {
+    if (expected !== content.version) {
+      throw new AdminApiError("CONFLICT", "다른 사람이 먼저 수정했습니다. 새로 고친 뒤 다시 시도해 주세요.");
+    }
+  }
+
   function findContent(id: string): ExerciseContent {
     const c = state.contents.find((x) => x.id === id);
     if (!c) throw new AdminApiError("NOT_FOUND", "콘텐츠를 찾을 수 없습니다.");
@@ -106,6 +125,10 @@ export function createMockAdminApi(opts: MockAdminApiOptions): AdminApi {
     return v;
   }
 
+  function activeReanalysis(contentId: string): MockJob | undefined {
+    return state.jobs.find((j) => j.kind === "REANALYZE" && j.contentId === contentId && isActiveJob(j));
+  }
+
   function audit(user: Pick<AdminUser, "id" | "name" | "role">, action: AuditAction, targetType: AuditLog["targetType"], targetId: string, summary: string) {
     state.auditLogs.push({
       id: newId("a"),
@@ -120,8 +143,8 @@ export function createMockAdminApi(opts: MockAdminApiOptions): AdminApi {
     });
   }
 
-  function draftFromAnalysis(job: MockJob, result: VideoAnalysisResult, at: ISODateString): ExerciseContent {
-    const segments: ExerciseSegment[] = result.segments.map((s, i) => ({
+  function segmentsFromAnalysis(job: MockJob, result: VideoAnalysisResult): ExerciseSegment[] {
+    return result.segments.map((s, i) => ({
       id: newId("s"),
       order: i + 1,
       kind: s.kind,
@@ -134,17 +157,21 @@ export function createMockAdminApi(opts: MockAdminApiOptions): AdminApi {
       // content-worker가 구간별 음성까지 만든다 (설계 문서 7장)
       tts: { status: "READY", audioUrl: `mock://tts/${job.id}/${i + 1}`, generatedForText: s.voiceGuide, failureReason: null },
     }));
+  }
+
+  function draftFromAnalysis(job: MockJob, result: VideoAnalysisResult, at: ISODateString): ExerciseContent {
     const noteParts = [job.requestNote ? `제작 요청 사항: ${job.requestNote}` : "", ...result.warnings.map((w) => `분석기 알림: ${w}`)].filter(Boolean);
     return {
       id: newId("c"),
       title: job.title,
-      summary: `${result.summary}`,
+      // 요약은 사용자에게 읽어 주는 문장이다. 분석기 설명이 사용자에게 가지 않도록 비워 두고 편집자가 쓰게 한다.
+      summary: "",
       category: job.category,
       difficulty: job.difficulty,
       tags: result.suggestedTags,
       precautions: result.suggestedPrecautions,
       video: job.video,
-      segments,
+      segments: segmentsFromAnalysis(job, result),
       analysis: { provider: result.provider, model: result.model, analyzedAt: at, summary: result.summary },
       status: "DRAFT",
       aiGenerated: true,
@@ -159,19 +186,23 @@ export function createMockAdminApi(opts: MockAdminApiOptions): AdminApi {
     };
   }
 
+  function failJob(job: MockJob, reason: string, progress: number, at: number) {
+    job.status = "FAILED";
+    job.progress = progress;
+    job.failureReason = reason;
+    job.updatedAt = iso(at);
+  }
+
   /** 시간이 흐른 만큼 진행 중인 작업과 TTS 요청을 앞으로 보낸다. 조회할 때마다 호출한다. */
   async function advanceTime() {
     const t = now();
     let changed = false;
 
     for (const job of state.jobs) {
-      if (job.status === "COMPLETED" || job.status === "FAILED") continue;
+      if (!isActiveJob(job)) continue;
       const stageIndex = Math.floor((t - job.startedAtMs) / jobStageMs);
       if (job.simulateFailure && stageIndex >= 1) {
-        job.status = "FAILED";
-        job.progress = 20;
-        job.failureReason = "영상에서 사람의 동작을 인식하지 못했습니다. 전신이 밝게 나오는 영상인지 확인해 주세요.";
-        job.updatedAt = iso(t);
+        failJob(job, "영상에서 사람의 동작을 인식하지 못했습니다. 전신이 밝게 나오는 영상인지 확인해 주세요.", 20, t);
         changed = true;
         continue;
       }
@@ -184,14 +215,31 @@ export function createMockAdminApi(opts: MockAdminApiOptions): AdminApi {
           difficulty: job.difficulty,
           requestNote: job.requestNote,
         });
-        const draft = draftFromAnalysis(job, result, iso(t));
-        state.contents.push(draft);
+        if (job.kind === "REANALYZE") {
+          const content = state.contents.find((c) => c.id === job.contentId);
+          if (!content || !EDITABLE_STATUSES.includes(content.status)) {
+            failJob(job, "그 사이 콘텐츠가 검수 중이거나 승인되어 분석 결과를 반영하지 못했습니다. 초안 또는 수정 요청 상태에서 다시 시도해 주세요.", 90, t);
+            changed = true;
+            continue;
+          }
+          content.segments = segmentsFromAnalysis(job, result);
+          content.analysis = { provider: result.provider, model: result.model, analyzedAt: iso(t), summary: result.summary };
+          content.aiGenerated = true;
+          if (job.requestNote) content.internalNote = [content.internalNote, `다시 분석 요청 사항: ${job.requestNote}`].filter(Boolean).join("\n");
+          content.updatedBy = job.requestedBy;
+          content.updatedAt = iso(t);
+          content.version += 1;
+          audit(WORKER_ACTOR, "CONTENT_REANALYZED", "CONTENT", content.id, `다시 분석 반영: 구간 ${content.segments.length}개로 교체`);
+        } else {
+          const draft = draftFromAnalysis(job, result, iso(t));
+          state.contents.push(draft);
+          job.contentId = draft.id;
+          audit(WORKER_ACTOR, "CONTENT_CREATED", "CONTENT", draft.id, `AI 초안 생성 완료: ${draft.title} (구간 ${draft.segments.length}개)`);
+        }
         job.status = "COMPLETED";
         job.progress = 100;
-        job.contentId = draft.id;
         job.completedAt = iso(t);
         job.updatedAt = iso(t);
-        audit({ id: "content-worker", name: "content-worker", role: "EDITOR" }, "CONTENT_CREATED", "CONTENT", draft.id, `AI 초안 생성 완료: ${draft.title} (구간 ${draft.segments.length}개)`);
         changed = true;
         continue;
       }
@@ -224,6 +272,24 @@ export function createMockAdminApi(opts: MockAdminApiOptions): AdminApi {
     }
 
     if (changed) persist();
+  }
+
+  function newJob(user: AdminUser, fields: Pick<MockJob, "kind" | "title" | "category" | "difficulty" | "requestNote" | "video" | "contentId">): MockJob {
+    const t = now();
+    return {
+      id: newId("j"),
+      ...fields,
+      status: "QUEUED",
+      progress: 0,
+      failureReason: null,
+      requestedBy: user.id,
+      createdAt: iso(t),
+      updatedAt: iso(t),
+      completedAt: null,
+      startedAtMs: t,
+      // 파일 이름에 "fail"이 들어가면 실패를 시연한다.
+      simulateFailure: /fail/i.test(fields.video.fileName),
+    };
   }
 
   return {
@@ -266,6 +332,19 @@ export function createMockAdminApi(opts: MockAdminApiOptions): AdminApi {
       return opts.videoStore.getPlaybackUrl(videoId);
     },
 
+    deleteVideo: (videoId) =>
+      withLatency(async () => {
+        const user = requireUser();
+        requirePermission(user, "job:create");
+        const v = findVideo(videoId);
+        const inUse = state.jobs.some((j) => j.video.id === videoId) || state.contents.some((c) => c.video.id === videoId);
+        if (inUse) throw new AdminApiError("CONFLICT", "작업이나 콘텐츠에 연결된 영상은 지울 수 없습니다.");
+        state.videos = state.videos.filter((x) => x.id !== videoId);
+        await opts.videoStore.delete(videoId);
+        audit(user, "VIDEO_DELETED", "VIDEO", videoId, `연결되지 않은 영상 삭제: ${v.fileName}`);
+        persist();
+      }),
+
     listContents: (filter = {}) =>
       withLatency(async () => {
         const user = requireUser();
@@ -299,15 +378,9 @@ export function createMockAdminApi(opts: MockAdminApiOptions): AdminApi {
       withLatency(() => {
         const user = requireUser();
         const content = findContent(id);
-        if (!canEditContent(user.role, content.status)) {
-          throw new AdminApiError(
-            "FORBIDDEN",
-            `${CONTENT_STATUS_LABELS[content.status]} 상태의 콘텐츠는 수정할 수 없거나 수정 권한이 없습니다.`,
-          );
-        }
-        if (input.expectedVersion !== content.version) {
-          throw new AdminApiError("CONFLICT", "다른 사람이 먼저 수정했습니다. 새로 고친 뒤 다시 시도해 주세요.");
-        }
+        requireEditable(user, content);
+        requireVersion(content, input.expectedVersion);
+        if (activeReanalysis(id)) throw new AdminApiError("CONFLICT", "다시 분석이 진행 중입니다. 끝난 뒤 수정해 주세요.");
         const { expectedVersion: _v, ...fields } = input;
         const before = new Map(content.segments.map((s) => [s.id, s]));
         const segments = fields.segments.map((s, i) => {
@@ -326,6 +399,54 @@ export function createMockAdminApi(opts: MockAdminApiOptions): AdminApi {
         return clone(content);
       }),
 
+    replaceContentVideo: (id, input) =>
+      withLatency(() => {
+        const user = requireUser();
+        requirePermission(user, "job:create");
+        const content = findContent(id);
+        requireEditable(user, content);
+        requireVersion(content, input.expectedVersion);
+        if (activeReanalysis(id)) throw new AdminApiError("CONFLICT", "다시 분석이 진행 중입니다. 끝난 뒤 영상을 바꿔 주세요.");
+        const video = findVideo(input.videoId);
+        const before = content.video;
+        content.video = video;
+        content.updatedBy = user.id;
+        content.updatedAt = iso();
+        content.version += 1;
+        audit(
+          user,
+          "CONTENT_VIDEO_REPLACED",
+          "CONTENT",
+          id,
+          `영상 교체: ${before.fileName} (${Math.round(before.durationSec)}초) → ${video.fileName} (${Math.round(video.durationSec)}초)`,
+        );
+        persist();
+        return clone(content);
+      }),
+
+    reanalyzeContent: (id, input) =>
+      withLatency(() => {
+        const user = requireUser();
+        requirePermission(user, "job:create");
+        const content = findContent(id);
+        requireEditable(user, content);
+        requireVersion(content, input.expectedVersion);
+        if (activeReanalysis(id)) throw new AdminApiError("CONFLICT", "이미 다시 분석이 진행 중입니다.");
+        const job = newJob(user, {
+          kind: "REANALYZE",
+          title: content.title,
+          category: content.category,
+          difficulty: content.difficulty,
+          requestNote: input.requestNote.trim(),
+          video: content.video,
+          contentId: id,
+        });
+        state.jobs.push(job);
+        audit(user, "CONTENT_JOB_CREATED", "CONTENT_JOB", job.id, `다시 분석 요청: ${content.title} (${content.video.fileName})`);
+        persist();
+        return clone(stripMockFields(job));
+      }),
+
     changeContentStatus: (id, input) =>
       withLatency(() => {
         const user = requireUser();
@@ -336,6 +457,9 @@ export function createMockAdminApi(opts: MockAdminApiOptions): AdminApi {
             "FORBIDDEN",
             `${CONTENT_STATUS_LABELS[content.status]} 상태에서 "${t.label}"을(를) 할 수 없거나 권한이 없습니다.`,
           );
+        }
+        if (input.action === "SUBMIT_FOR_REVIEW" && activeReanalysis(id)) {
+          throw new AdminApiError("CONFLICT", "다시 분석이 진행 중입니다. 끝난 뒤 검수를 요청해 주세요.");
         }
         if (input.action === "REQUEST_CHANGES" && !input.comment?.trim()) {
           throw new AdminApiError("VALIDATION", "수정 요청에는 검수 의견을 적어야 합니다.");
@@ -389,26 +513,15 @@ export function createMockAdminApi(opts: MockAdminApiOptions): AdminApi {
         requirePermission(user, "job:create");
         if (!input.title.trim()) throw new AdminApiError("VALIDATION", "운동 이름을 입력해 주세요.");
         const video = findVideo(input.videoId);
-        const t = now();
-        const job: MockJob = {
-          id: newId("j"),
+        const job = newJob(user, {
+          kind: "CREATE",
           title: input.title.trim(),
           category: input.category,
           difficulty: input.difficulty,
           requestNote: input.requestNote.trim(),
           video,
-          status: "QUEUED",
-          progress: 0,
-          failureReason: null,
           contentId: null,
-          requestedBy: user.id,
-          createdAt: iso(t),
-          updatedAt: iso(t),
-          completedAt: null,
-          startedAtMs: t,
-          // 파일 이름에 "fail"이 들어가면 실패를 시연한다.
-          simulateFailure: /fail/i.test(video.fileName),
-        };
+        });
         state.jobs.push(job);
         audit(user, "CONTENT_JOB_CREATED", "CONTENT_JOB", job.id, `제작 작업 생성: ${job.title} (${video.fileName}, ${Math.round(video.durationSec)}초)`);
         persist();
@@ -421,6 +534,9 @@ export function createMockAdminApi(opts: MockAdminApiOptions): AdminApi {
         requirePermission(user, "job:create");
         const job = findJob(id);
         if (job.status !== "FAILED") throw new AdminApiError("VALIDATION", "실패한 작업만 다시 시도할 수 있습니다.");
+        if (job.kind === "REANALYZE" && job.contentId && activeReanalysis(job.contentId)) {
+          throw new AdminApiError("CONFLICT", "이 콘텐츠는 이미 다시 분석이 진행 중입니다.");
+        }
         const t = now();
         job.status = "QUEUED";
         job.progress = 0;

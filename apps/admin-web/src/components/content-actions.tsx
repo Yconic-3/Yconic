@@ -22,7 +22,7 @@ const variantFor: Partial<Record<ContentAction, "primary" | "danger">> = {
 
 const CONFIRM_MESSAGES: Partial<Record<ContentAction, string>> = {
   APPROVE: "검수 내용을 확인했고 이 콘텐츠를 승인합니다. 승인 후에는 내용을 고칠 수 없습니다.",
-  PUBLISH: "사용자 앱과 사용자 AI에 바로 공개됩니다. 공개 전 모든 단계의 음성 안내를 확인했는지 점검해 주세요.",
+  PUBLISH: "사용자 앱과 사용자 AI에 바로 공개됩니다. 음성 안내가 없는 구간은 안내 없이 영상만 재생됩니다.",
   UNPUBLISH: "사용자에게 더 이상 보이지 않게 됩니다. 운동 중인 사용자가 있을 수 있습니다.",
   ARCHIVE: "보관하면 목록에서 보관됨으로 표시되고, 보관 해제 전까지 사용할 수 없습니다.",
 };

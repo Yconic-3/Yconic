@@ -45,7 +45,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
     setReady(true);
     // users는 모드에 따라 고정된 목록이다.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const login = useCallback(

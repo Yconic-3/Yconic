@@ -24,7 +24,7 @@ export interface MockTtsRequest {
 }
 
 export interface MockState {
-  schemaVersion: 2;
+  schemaVersion: 3;
   videos: VideoAsset[];
   contents: ExerciseContent[];
   jobs: MockJob[];
@@ -184,6 +184,7 @@ export function createSeedState(nowMs: number): MockState {
   const jobs: MockJob[] = [
     {
       id: "j1",
+      kind: "CREATE",
       title: "벽 밀기 상체 운동",
       category: "STRENGTH",
       difficulty: "BEGINNER",
@@ -202,6 +203,7 @@ export function createSeedState(nowMs: number): MockState {
     },
     {
       id: "j2",
+      kind: "CREATE",
       title: "누워서 다리 들기",
       category: "REHAB",
       difficulty: "BEGINNER",
@@ -228,5 +230,5 @@ export function createSeedState(nowMs: number): MockState {
     { id: "a5", action: "CONTENT_CREATED", actorId: "u-editor", actorName: "김편집", actorRole: "EDITOR", targetType: "CONTENT", targetId: "c3", summary: "AI 초안 생성 완료: 벽 밀기 상체 운동", createdAt: ago(40) },
   ];
 
-  return { schemaVersion: 2, videos, contents, jobs, auditLogs, ttsRequests: [] };
+  return { schemaVersion: 3, videos, contents, jobs, auditLogs, ttsRequests: [] };
 }

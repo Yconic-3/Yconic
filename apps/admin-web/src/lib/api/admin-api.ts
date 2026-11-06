@@ -7,6 +7,8 @@ import type {
   CreateContentJobInput,
   ExerciseContent,
   Id,
+  ReanalyzeContentInput,
+  ReplaceContentVideoInput,
   RequestTtsInput,
   UpdateExerciseContentInput,
   VideoAsset,
@@ -21,9 +23,13 @@ export interface AdminApi {
   uploadVideo(file: File, onProgress?: (fraction: number) => void): Promise<VideoAsset>;
   /** 재생 가능한 주소. 파일이 없는 예시 데이터면 null */
   getVideoPlaybackUrl(videoId: Id): Promise<string | null>;
+  /** 어디에도 연결되지 않은 영상을 지운다 (업로드 후 다음 단계가 실패했을 때 정리용) */
+  deleteVideo(videoId: Id): Promise<void>;
   listContents(filter?: ContentListFilter): Promise<ExerciseContent[]>;
   getContent(id: Id): Promise<ExerciseContent>;
   updateContent(id: Id, input: UpdateExerciseContentInput): Promise<ExerciseContent>;
+  replaceContentVideo(id: Id, input: ReplaceContentVideoInput): Promise<ExerciseContent>;
+  reanalyzeContent(id: Id, input: ReanalyzeContentInput): Promise<ContentJob>;
   changeContentStatus(id: Id, input: ChangeContentStatusInput): Promise<ExerciseContent>;
   requestTts(contentId: Id, input: RequestTtsInput): Promise<ExerciseContent>;
   listJobs(): Promise<ContentJob[]>;

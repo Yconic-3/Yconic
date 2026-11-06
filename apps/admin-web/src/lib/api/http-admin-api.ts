@@ -24,6 +24,7 @@ export function createHttpAdminApi(baseUrl: string, getToken: () => string | nul
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (!res.ok) throw await parseError(res);
+    if (res.status === 204) return undefined as T;
     return (await res.json()) as T;
   }
 
@@ -64,9 +65,12 @@ export function createHttpAdminApi(baseUrl: string, getToken: () => string | nul
       }),
     getVideoPlaybackUrl: async (videoId) =>
       (await request<PlaybackUrlResponse>("GET", `/admin/videos/${encodeURIComponent(videoId)}/playback-url`)).url,
+    deleteVideo: (videoId) => request("DELETE", `/admin/videos/${encodeURIComponent(videoId)}`),
     listContents: (f = {}) => request("GET", `/admin/contents${qs({ status: f.status, query: f.query })}`),
     getContent: (id) => request("GET", `/admin/contents/${encodeURIComponent(id)}`),
     updateContent: (id, input) => request("PATCH", `/admin/contents/${encodeURIComponent(id)}`, input),
+    replaceContentVideo: (id, input) => request("PUT", `/admin/contents/${encodeURIComponent(id)}/video`, input),
+    reanalyzeContent: (id, input) => request("POST", `/admin/contents/${encodeURIComponent(id)}/reanalyze`, input),
     changeContentStatus: (id, input) => request("POST", `/admin/contents/${encodeURIComponent(id)}/actions`, input),
     requestTts: (id, input) => request("POST", `/admin/contents/${encodeURIComponent(id)}/tts`, input),
     listJobs: () => request("GET", "/admin/content-jobs"),

@@ -6,6 +6,7 @@ export interface VideoStore {
   put(videoId: string, file: Blob): Promise<void>;
   /** 재생 주소. 파일이 없으면 null */
   getPlaybackUrl(videoId: string): Promise<string | null>;
+  delete(videoId: string): Promise<void>;
   clear(): Promise<void>;
 }
 
@@ -51,6 +52,14 @@ export function createIndexedDbVideoStore(): VideoStore {
       urlCache.set(videoId, url);
       return url;
     },
+    async delete(videoId) {
+      const cached = urlCache.get(videoId);
+      if (cached) URL.revokeObjectURL(cached);
+      urlCache.delete(videoId);
+      const db = await openDb();
+      await tx(db, "readwrite", (s) => s.delete(videoId));
+      db.close();
+    },
     async clear() {
       for (const url of urlCache.values()) URL.revokeObjectURL(url);
       urlCache.clear();
@@ -69,6 +78,9 @@ export function createMemoryVideoStore(): VideoStore {
     },
     async getPlaybackUrl(videoId) {
       return files.has(videoId) ? `memory://video/${videoId}` : null;
+    },
+    async delete(videoId) {
+      files.delete(videoId);
     },
     async clear() {
       files.clear();

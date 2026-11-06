@@ -41,7 +41,6 @@ export function useAsync<T>(fn: () => Promise<T>, deps: readonly unknown[]): Asy
   useEffect(() => {
     void reload();
     // deps는 호출하는 쪽에서 정한다.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
   return { data, error, loading, reload };

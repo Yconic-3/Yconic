@@ -155,6 +155,10 @@ describe("제작 작업", () => {
     expect(draft.segments[0]?.kind).toBe("INTRO");
     expect(draft.segments.at(-1)?.endSec).toBe(100);
     expect(draft.internalNote).toContain("천천히");
+    // 요약은 사용자에게 읽어 주는 칸이라 분석기 문구를 넣지 않는다
+    expect(draft.summary).toBe("");
+    expect(draft.analysis?.summary).toContain("모의 분석");
+    expect(job.kind).toBe("CREATE");
   });
   it("없는 영상으로는 작업을 만들 수 없다", async () => {
     const { api } = setup();
@@ -184,6 +188,94 @@ describe("모의 분석기 구간 나누기", () => {
   });
   it("짧은 영상은 운동 구간 하나만 만든다", () => {
     expect(planSegmentsByDuration(12, "CARDIO").map((s) => s.kind)).toEqual(["EXERCISE"]);
+  });
+});
+
+describe("영상 삭제", () => {
+  it("연결되지 않은 영상은 지울 수 있고, 지운 뒤에는 재생 주소가 없다", async () => {
+    const { api } = setup();
+    const v = await api.uploadVideo(fakeVideo("orphan.mp4"));
+    await api.deleteVideo(v.id);
+    await expectError(api.getVideoPlaybackUrl(v.id), "NOT_FOUND");
+  });
+  it("작업이나 콘텐츠에 연결된 영상은 지울 수 없다", async () => {
+    const { api } = setup();
+    await expectError(api.deleteVideo("v1"), "CONFLICT");
+    const v = await api.uploadVideo(fakeVideo("used.mp4"));
+    await api.createJob({ videoId: v.id, title: "x", category: "CARDIO", difficulty: "BEGINNER", requestNote: "" });
+    await expectError(api.deleteVideo(v.id), "CONFLICT");
+  });
+});
+
+describe("영상 교체", () => {
+  it("초안의 영상을 바꾸면 구간은 그대로 두고 버전이 오른다", async () => {
+    const { api } = setup();
+    const before = await api.getContent("c3");
+    const v = await api.uploadVideo(fakeVideo("wall-v2.mp4", 60));
+    const after = await api.replaceContentVideo("c3", { videoId: v.id, expectedVersion: before.version });
+    expect(after.video.id).toBe(v.id);
+    expect(after.segments.map((s) => s.id)).toEqual(before.segments.map((s) => s.id));
+    expect(after.version).toBe(before.version + 1);
+  });
+  it("검수 중인 콘텐츠의 영상은 바꿀 수 없다", async () => {
+    const { api } = setup();
+    const c = await api.getContent("c2");
+    const v = await api.uploadVideo(fakeVideo("x.mp4"));
+    await expectError(api.replaceContentVideo("c2", { videoId: v.id, expectedVersion: c.version }), "FORBIDDEN");
+  });
+});
+
+describe("다시 분석", () => {
+  it("끝나면 구간이 새 분석 결과로 바뀌고 요약은 그대로다", async () => {
+    const { api, tick, as } = setup();
+    const before = await api.getContent("c3");
+    const job = await api.reanalyzeContent("c3", { requestNote: "휴식 넉넉히", expectedVersion: before.version });
+    expect(job.kind).toBe("REANALYZE");
+    expect(job.contentId).toBe("c3");
+    await expectError(api.reanalyzeContent("c3", { requestNote: "", expectedVersion: before.version }), "CONFLICT");
+    await expectError(api.updateContent("c3", { ...editable(before), expectedVersion: before.version }), "CONFLICT");
+    tick(6000);
+    const after = await api.getContent("c3");
+    expect(after.segments.map((s) => s.id)).not.toEqual(before.segments.map((s) => s.id));
+    expect(after.segments.every((s) => s.tts.status === "READY")).toBe(true);
+    expect(after.summary).toBe(before.summary);
+    expect(after.internalNote).toContain("휴식 넉넉히");
+    expect(after.version).toBe(before.version + 1);
+    as(superAdmin);
+    expect((await api.listAuditLogs({ targetId: "c3" }))[0]?.action).toBe("CONTENT_REANALYZED");
+  });
+  it("진행 중에는 검수 요청을 막는다", async () => {
+    const { api } = setup();
+    const c = await api.getContent("c4");
+    await api.reanalyzeContent("c4", { requestNote: "", expectedVersion: c.version });
+    await expectError(api.changeContentStatus("c4", { action: "SUBMIT_FOR_REVIEW" }), "CONFLICT");
+  });
+  it("그 사이 콘텐츠가 수정할 수 없는 상태가 되면 결과를 반영하지 않고 실패한다", async () => {
+    const { api, tick } = setup();
+    const before = await api.getContent("c3");
+    const job = await api.reanalyzeContent("c3", { requestNote: "", expectedVersion: before.version });
+    await api.changeContentStatus("c3", { action: "ARCHIVE" });
+    tick(6000);
+    const done = (await api.listJobs()).find((j) => j.id === job.id)!;
+    expect(done.status).toBe("FAILED");
+    expect(done.failureReason).toContain("반영하지 못했습니다");
+    const after = await api.getContent("c3");
+    expect(after.segments.map((s) => s.id)).toEqual(before.segments.map((s) => s.id));
+  });
+  it("검수 중인 콘텐츠는 다시 분석할 수 없다", async () => {
+    const { api } = setup();
+    const c = await api.getContent("c2");
+    await expectError(api.reanalyzeContent("c2", { requestNote: "", expectedVersion: c.version }), "FORBIDDEN");
+  });
+});
+
+describe("저장 데이터 옮기기", () => {
+  it("예전 형식(v2) 작업에 kind를 채워 넣는다", async () => {
+    const { migrateMockState } = await import("./storage");
+    const migrated = migrateMockState({ schemaVersion: 2, jobs: [{ id: "j1" }], videos: [], contents: [], auditLogs: [], ttsRequests: [] });
+    expect(migrated?.schemaVersion).toBe(3);
+    expect(migrated?.jobs[0]?.kind).toBe("CREATE");
+    expect(migrateMockState({ schemaVersion: 1 })).toBeNull();
   });
 });
 
