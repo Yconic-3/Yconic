@@ -103,6 +103,34 @@ describe("검수 흐름", () => {
     expect(published.status).toBe("PUBLISHED");
     expect(published.publishedAt).not.toBeNull();
   });
+  it("만든 사람은 자기 콘텐츠를 승인할 수 없고, 다른 승인권자는 할 수 있다", async () => {
+    const { api, as, tick } = setup();
+    as(approver);
+    const v = await api.uploadVideo(fakeVideo("mine.mp4", 60));
+    const job = await api.createJob({ videoId: v.id, title: "내 운동", category: "CARDIO", difficulty: "BEGINNER", requestNote: "" });
+    tick(6000);
+    const contentId = (await api.listJobs()).find((j) => j.id === job.id)!.contentId!;
+    const draft = await api.getContent(contentId);
+    expect(draft.createdBy).toBe(approver.id);
+    await api.updateContent(contentId, { ...editable(draft), summary: "요약", expectedVersion: draft.version });
+    const submitted = await api.changeContentStatus(contentId, { action: "SUBMIT_FOR_REVIEW" });
+    expect(submitted.submittedBy).toBe(approver.id);
+    await expect(api.changeContentStatus(contentId, { action: "APPROVE" })).rejects.toThrow("다른 승인권자");
+    as(superAdmin);
+    expect((await api.changeContentStatus(contentId, { action: "APPROVE" })).status).toBe("APPROVED");
+  });
+  it("남이 만든 콘텐츠라도 직접 검수를 요청했으면 승인할 수 없다", async () => {
+    const { api, as } = setup();
+    as(approver);
+    // c3는 편집자가 만든 초안이다. 승인권자가 직접 검수를 요청한다.
+    await api.changeContentStatus("c3", { action: "SUBMIT_FOR_REVIEW" });
+    const c = await api.getContent("c3");
+    expect(c.status).toBe("IN_REVIEW");
+    expect(c.submittedBy).toBe(approver.id);
+    await expectError(api.changeContentStatus("c3", { action: "APPROVE" }), "FORBIDDEN");
+    // 수정 요청은 막지 않는다
+    expect((await api.changeContentStatus("c3", { action: "REQUEST_CHANGES", comment: "다시 볼게요" })).status).toBe("CHANGES_REQUESTED");
+  });
   it("수정 요청에는 의견이 필요하고 콘텐츠에 남는다", async () => {
     const { api, as } = setup();
     as(approver);
@@ -270,11 +298,12 @@ describe("다시 분석", () => {
 });
 
 describe("저장 데이터 옮기기", () => {
-  it("예전 형식(v2) 작업에 kind를 채워 넣는다", async () => {
+  it("예전 형식(v2) 데이터를 v4로 옮긴다", async () => {
     const { migrateMockState } = await import("./storage");
-    const migrated = migrateMockState({ schemaVersion: 2, jobs: [{ id: "j1" }], videos: [], contents: [], auditLogs: [], ttsRequests: [] });
-    expect(migrated?.schemaVersion).toBe(3);
+    const migrated = migrateMockState({ schemaVersion: 2, jobs: [{ id: "j1" }], videos: [], contents: [{ id: "c1" }], auditLogs: [], ttsRequests: [] });
+    expect(migrated?.schemaVersion).toBe(4);
     expect(migrated?.jobs[0]?.kind).toBe("CREATE");
+    expect(migrated?.contents[0]?.submittedBy).toBeNull();
     expect(migrateMockState({ schemaVersion: 1 })).toBeNull();
   });
 });

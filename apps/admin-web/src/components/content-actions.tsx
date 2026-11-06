@@ -7,8 +7,8 @@ import { Button, Textarea } from "./ui";
 interface Props {
   role: AdminRole;
   status: ContentStatus;
-  /** 검수 요청을 막아야 하는 이유. 없으면 가능 */
-  submitBlockedReason: string | null;
+  /** 행동별로 막아야 하는 이유. 값이 있으면 버튼을 잠그고 이유를 보여 준다 */
+  blockedReasons: Partial<Record<ContentAction, string | null>>;
   busy: boolean;
   onAction(action: ContentAction, comment?: string): Promise<void>;
 }
@@ -27,7 +27,7 @@ const CONFIRM_MESSAGES: Partial<Record<ContentAction, string>> = {
   ARCHIVE: "보관하면 목록에서 보관됨으로 표시되고, 보관 해제 전까지 사용할 수 없습니다.",
 };
 
-export function ContentActions({ role, status, submitBlockedReason, busy, onAction }: Props) {
+export function ContentActions({ role, status, blockedReasons, busy, onAction }: Props) {
   const actions = availableActions(role, status);
   const [pending, setPending] = useState<ContentAction | null>(null);
   const [comment, setComment] = useState("");
@@ -49,7 +49,7 @@ export function ContentActions({ role, status, submitBlockedReason, busy, onActi
       <div className="flex flex-wrap gap-2">
         {actions.map((a) => {
           const t = CONTENT_TRANSITIONS[a];
-          const blocked = a === "SUBMIT_FOR_REVIEW" ? submitBlockedReason : null;
+          const blocked = blockedReasons[a] ?? null;
           return (
             <Button
               key={a}
@@ -66,7 +66,13 @@ export function ContentActions({ role, status, submitBlockedReason, busy, onActi
           );
         })}
       </div>
-      {submitBlockedReason && actions.includes("SUBMIT_FOR_REVIEW") && <p className="text-xs text-amber-700">{submitBlockedReason}</p>}
+      {actions
+        .filter((a) => blockedReasons[a])
+        .map((a) => (
+          <p key={a} className="text-xs text-amber-700">
+            {CONTENT_TRANSITIONS[a].label}: {blockedReasons[a]}
+          </p>
+        ))}
 
       {pending && pendingTransition && (
         <div className="rounded-md border border-amber-200 bg-amber-50 p-3" role="group" aria-label={`${pendingTransition.label} 확인`}>

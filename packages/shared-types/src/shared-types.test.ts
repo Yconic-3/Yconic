@@ -8,6 +8,8 @@ import {
   hasBlockingIssues,
   hasPermission,
   isVisibleToUsers,
+  SELF_APPROVAL_MESSAGE,
+  selfApprovalBlockedReason,
   validateExerciseContent,
   type ExerciseSegment,
 } from "./index";
@@ -67,6 +69,16 @@ describe("상태 전이", () => {
     expect(canEditContent("EDITOR", "DRAFT")).toBe(true);
     expect(canEditContent("EDITOR", "IN_REVIEW")).toBe(false);
     expect(canEditContent("SUPER_ADMIN", "PUBLISHED")).toBe(false);
+  });
+  it("만든 사람과 검수 요청한 사람은 승인할 수 없다", () => {
+    const content = { createdBy: "u-a", submittedBy: "u-b" };
+    expect(selfApprovalBlockedReason("u-a", "APPROVE", content)).toBe(SELF_APPROVAL_MESSAGE);
+    expect(selfApprovalBlockedReason("u-b", "APPROVE", content)).toBe(SELF_APPROVAL_MESSAGE);
+    expect(selfApprovalBlockedReason("u-c", "APPROVE", content)).toBeNull();
+    // 수정 요청이나 공개는 막지 않는다
+    expect(selfApprovalBlockedReason("u-a", "REQUEST_CHANGES", content)).toBeNull();
+    expect(selfApprovalBlockedReason("u-a", "PUBLISH", content)).toBeNull();
+    expect(selfApprovalBlockedReason("u-a", "APPROVE", { createdBy: "u-x", submittedBy: null })).toBeNull();
   });
   it("공개 중인 콘텐츠만 사용자에게 보인다", () => {
     expect(isVisibleToUsers({ status: "PUBLISHED" })).toBe(true);

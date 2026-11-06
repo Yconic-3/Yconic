@@ -7,6 +7,7 @@ import {
   canEditContent,
   hasBlockingIssues,
   hasPermission,
+  selfApprovalBlockedReason,
   validateExerciseContent,
   type ContentAction,
   type ContentJob,
@@ -520,7 +521,13 @@ export default function ContentDetailPage() {
           </Card>
 
           <Card title="상태 변경">
-            <ContentActions role={user.role} status={content.status} submitBlockedReason={submitBlockedReason} busy={busy} onAction={onAction} />
+            <ContentActions
+              role={user.role}
+              status={content.status}
+              blockedReasons={{ SUBMIT_FOR_REVIEW: submitBlockedReason, APPROVE: selfApprovalBlockedReason(user.id, "APPROVE", content) }}
+              busy={busy}
+              onAction={onAction}
+            />
           </Card>
 
           <Card title="영상">

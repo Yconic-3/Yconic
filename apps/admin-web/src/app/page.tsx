@@ -1,6 +1,6 @@
 "use client";
 
-import { CONTENT_STATUSES, CONTENT_STATUS_LABELS, hasPermission, type ContentStatus } from "@yconic/shared-types";
+import { CONTENT_STATUSES, CONTENT_STATUS_LABELS, hasPermission, selfApprovalBlockedReason, type ContentStatus } from "@yconic/shared-types";
 import Link from "next/link";
 import { ContentStatusBadge, JobStatusBadge, isJobActive } from "@/components/status-badge";
 import { Alert, Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
@@ -56,6 +56,11 @@ export default function DashboardPage() {
                   <Link href={`/contents/${c.id}`} className="min-w-0 flex-1 truncate font-medium hover:underline">
                     {c.title}
                   </Link>
+                  {c.status === "IN_REVIEW" && selfApprovalBlockedReason(user.id, "APPROVE", c) && (
+                    <span className="shrink-0 text-xs text-amber-700" title={selfApprovalBlockedReason(user.id, "APPROVE", c) ?? undefined}>
+                      내 콘텐츠 · 다른 승인권자 필요
+                    </span>
+                  )}
                   <ContentStatusBadge status={c.status} />
                   <span className="shrink-0 text-xs text-slate-500">{formatRelative(c.updatedAt)}</span>
                 </li>

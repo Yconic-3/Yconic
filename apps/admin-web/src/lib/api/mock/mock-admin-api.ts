@@ -5,6 +5,7 @@ import {
   canEditContent,
   canPerformAction,
   hasPermission,
+  selfApprovalBlockedReason,
   type AdminUser,
   type AuditAction,
   type AuditLog,
@@ -178,6 +179,7 @@ export function createMockAdminApi(opts: MockAdminApiOptions): AdminApi {
       internalNote: noteParts.join("\n"),
       reviewComment: null,
       createdBy: job.requestedBy,
+      submittedBy: null,
       updatedBy: job.requestedBy,
       createdAt: at,
       updatedAt: at,
@@ -461,6 +463,8 @@ export function createMockAdminApi(opts: MockAdminApiOptions): AdminApi {
         if (input.action === "SUBMIT_FOR_REVIEW" && activeReanalysis(id)) {
           throw new AdminApiError("CONFLICT", "다시 분석이 진행 중입니다. 끝난 뒤 검수를 요청해 주세요.");
         }
+        const selfApproval = selfApprovalBlockedReason(user.id, input.action, content);
+        if (selfApproval) throw new AdminApiError("FORBIDDEN", selfApproval);
         if (input.action === "REQUEST_CHANGES" && !input.comment?.trim()) {
           throw new AdminApiError("VALIDATION", "수정 요청에는 검수 의견을 적어야 합니다.");
         }
@@ -469,6 +473,7 @@ export function createMockAdminApi(opts: MockAdminApiOptions): AdminApi {
         content.updatedBy = user.id;
         content.updatedAt = iso();
         content.version += 1;
+        if (input.action === "SUBMIT_FOR_REVIEW") content.submittedBy = user.id;
         if (input.action === "REQUEST_CHANGES") content.reviewComment = input.comment!.trim();
         if (input.action === "PUBLISH") content.publishedAt = iso();
         if (input.action === "UNPUBLISH") content.publishedAt = null;

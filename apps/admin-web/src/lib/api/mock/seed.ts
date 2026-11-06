@@ -24,7 +24,7 @@ export interface MockTtsRequest {
 }
 
 export interface MockState {
-  schemaVersion: 3;
+  schemaVersion: 4;
   videos: VideoAsset[];
   contents: ExerciseContent[];
   jobs: MockJob[];
@@ -107,6 +107,7 @@ export function createSeedState(nowMs: number): MockState {
       internalNote: "",
       reviewComment: null,
       createdBy: "u-editor",
+      submittedBy: "u-editor",
       updatedBy: "u-approver",
       createdAt: ago(60 * 24 * 3),
       updatedAt: ago(60 * 24 * 2),
@@ -129,6 +130,7 @@ export function createSeedState(nowMs: number): MockState {
       internalNote: "무릎 각도 설명 확인 필요",
       reviewComment: null,
       createdBy: "u-editor",
+      submittedBy: "u-editor",
       updatedBy: "u-editor",
       createdAt: ago(60 * 24),
       updatedAt: ago(120),
@@ -151,6 +153,7 @@ export function createSeedState(nowMs: number): MockState {
       internalNote: "제작 요청 사항: 손목이 약한 분도 할 수 있게 설명",
       reviewComment: null,
       createdBy: "u-editor",
+      submittedBy: null,
       updatedBy: "u-editor",
       createdAt: ago(40),
       updatedAt: ago(40),
@@ -173,6 +176,7 @@ export function createSeedState(nowMs: number): MockState {
       internalNote: "",
       reviewComment: "영상 시작 부분에 주변 장애물을 확인하는 준비 구간과 주의사항을 추가해 주세요.",
       createdBy: "u-editor",
+      submittedBy: "u-editor",
       updatedBy: "u-approver",
       createdAt: ago(60 * 30),
       updatedAt: ago(60 * 5),
@@ -230,5 +234,5 @@ export function createSeedState(nowMs: number): MockState {
     { id: "a5", action: "CONTENT_CREATED", actorId: "u-editor", actorName: "김편집", actorRole: "EDITOR", targetType: "CONTENT", targetId: "c3", summary: "AI 초안 생성 완료: 벽 밀기 상체 운동", createdAt: ago(40) },
   ];
 
-  return { schemaVersion: 3, videos, contents, jobs, auditLogs, ttsRequests: [] };
+  return { schemaVersion: 4, videos, contents, jobs, auditLogs, ttsRequests: [] };
 }

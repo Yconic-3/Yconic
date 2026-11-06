@@ -1,5 +1,6 @@
 import { hasPermission, type AdminPermission, type AdminRole } from "./admin";
-import type { ContentStatus } from "./exercise";
+import type { Id } from "./common";
+import type { ContentStatus, ExerciseContent } from "./exercise";
 
 /** 콘텐츠 상태를 바꾸는 관리자 행동 */
 export const CONTENT_ACTIONS = [
@@ -93,4 +94,23 @@ export const EDITABLE_STATUSES: readonly ContentStatus[] = ["DRAFT", "CHANGES_RE
 
 export function canEditContent(role: AdminRole, status: ContentStatus): boolean {
   return EDITABLE_STATUSES.includes(status) && hasPermission(role, "content:edit");
+}
+
+/**
+ * 자기 승인 금지 (docs/decisions/0003).
+ * 콘텐츠를 처음 만든 사람과 검수를 요청한 사람은 그 콘텐츠를 승인할 수 없다. 역할과 상관없이 적용한다.
+ * 반환값이 null이 아니면 그 이유로 거절한다. 백엔드도 같은 규칙으로 검증해야 한다.
+ */
+export const SELF_APPROVAL_MESSAGE = "직접 만들었거나 검수를 요청한 콘텐츠는 다른 승인권자가 승인해야 합니다.";
+
+export function selfApprovalBlockedReason(
+  actorId: Id,
+  action: ContentAction,
+  content: Pick<ExerciseContent, "createdBy" | "submittedBy">,
+): string | null {
+  if (action !== "APPROVE") return null;
+  if (actorId === content.createdBy || (content.submittedBy !== null && actorId === content.submittedBy)) {
+    return SELF_APPROVAL_MESSAGE;
+  }
+  return null;
 }

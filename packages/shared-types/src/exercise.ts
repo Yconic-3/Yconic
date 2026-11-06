@@ -154,6 +154,8 @@ export interface ExerciseContent {
   /** 승인권자가 남긴 최근 검수 의견 */
   reviewComment: string | null;
   createdBy: Id;
+  /** 마지막으로 검수를 요청한 사람. 이 사람과 createdBy는 승인할 수 없다 (자기 승인 금지) */
+  submittedBy: Id | null;
   updatedBy: Id;
   createdAt: ISODateString;
   updatedAt: ISODateString;
