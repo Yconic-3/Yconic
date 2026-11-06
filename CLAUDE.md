@@ -11,8 +11,16 @@
 
 ## 현재 상태
 
-- 아직 코드는 없고, 설계 문서와 협업 환경 설정만 있다
-- 다음 단계: pnpm + Turborepo 모노레포 초기화 (`apps/`, `packages/` 구조는 설계 문서 2장 참고)
+- pnpm + Turborepo 모노레포. `apps/`, `packages/` 구조는 설계 문서 2장을 따른다
+- 공통 데이터 모양·권한표·상태 전이·검사 규칙은 `packages/shared-types`에 있다. 새 타입을 따로 만들지 말고 여기서 가져다 쓴다
+- 작업 분담과 규칙은 `docs/decisions/0001-모노레포-구조와-작업-분담.md` 참고. 자기 담당 폴더 밖은 고치지 않는다
+- 백엔드(`apps/api`)가 준비되기 전에는 각 앱이 모의 데이터로 개발한다
+
+## 자주 쓰는 명령
+
+- 설치: `pnpm install`
+- 전체 테스트: `pnpm test` / 타입 검사: `pnpm typecheck`
+- 관리자 웹 실행: `pnpm dev:admin` (http://localhost:3001)
 
 ## 작업 규칙
 

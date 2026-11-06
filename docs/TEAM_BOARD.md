@@ -12,6 +12,13 @@
 
 ---
 
+## 2026-11-06 · Yconic
+
+- 모노레포 기본 구조와 공통 타입(`packages/shared-types`)을 올렸다.
+- 작업 분담표는 `docs/decisions/0001-모노레포-구조와-작업-분담.md`에 있다. 맡을 영역을 정하면 표의 "미정"을 자기 이름으로 바꿔서 PR로 올려 주세요.
+- 나는 관리자 웹(`apps/admin-web`)부터 개발한다.
+- 콘텐츠·운동 단계·권한 같은 데이터 모양은 shared-types에서 가져다 쓰고, 바꿀 때는 `[공통 타입]` PR로 알려 주세요.
+
 ## 2026-11-03 · Yconic
 
 - 저장소 협업 환경을 설정했다. (`CLAUDE.md`, `.vscode/`, `docs/CONTRIBUTING.md`)
