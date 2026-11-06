@@ -5,3 +5,4 @@ export * from "./content-job";
 export * from "./workflow";
 export * from "./audit";
 export * from "./validation";
+export * from "./admin-api";
