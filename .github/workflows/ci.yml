@@ -1,0 +1,47 @@
+# GitHub 자동 검사 (CI)
+# PR을 올리거나 고칠 때, 그리고 main에 합쳐질 때 GitHub 서버에서 타입 검사·테스트·빌드를 돌린다.
+# 개발용이며 사용자에게 배포되는 앱에는 들어가지 않는다.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# 같은 브랜치에 새로 푸시하면 이전 검사는 취소한다.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: 타입 검사 · 테스트 · 빌드
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v5
+
+      # package.json의 packageManager에 적힌 pnpm 버전을 쓴다.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: 의존성 설치
+        run: pnpm install --frozen-lockfile
+
+      - name: 타입 검사
+        run: pnpm typecheck
+
+      - name: 테스트
+        run: pnpm test
+
+      - name: 빌드
+        run: pnpm build
