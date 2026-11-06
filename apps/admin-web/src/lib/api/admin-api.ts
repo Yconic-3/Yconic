@@ -9,6 +9,7 @@ import type {
   Id,
   RequestTtsInput,
   UpdateExerciseContentInput,
+  VideoAsset,
 } from "@yconic/shared-types";
 
 /**
@@ -16,6 +17,10 @@ import type {
  * 화면 코드는 이 인터페이스만 사용하고, 모의 구현과 HTTP 구현은 바꿔 끼울 수 있다.
  */
 export interface AdminApi {
+  /** 영상 파일을 저장소에 올린다. 진행률은 0~1 */
+  uploadVideo(file: File, onProgress?: (fraction: number) => void): Promise<VideoAsset>;
+  /** 재생 가능한 주소. 파일이 없는 예시 데이터면 null */
+  getVideoPlaybackUrl(videoId: Id): Promise<string | null>;
   listContents(filter?: ContentListFilter): Promise<ExerciseContent[]>;
   getContent(id: Id): Promise<ExerciseContent>;
   updateContent(id: Id, input: UpdateExerciseContentInput): Promise<ExerciseContent>;

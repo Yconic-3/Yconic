@@ -1,8 +1,10 @@
 import type { AdminUser } from "@yconic/shared-types";
+import { readVideoMetadata } from "../video";
 import type { AdminApi } from "./admin-api";
 import { createHttpAdminApi } from "./http-admin-api";
 import { createMockAdminApi } from "./mock/mock-admin-api";
 import { createLocalStorageMockStorage } from "./mock/storage";
+import { createIndexedDbVideoStore } from "./mock/video-store";
 
 export type ApiMode = "mock" | "http";
 
@@ -16,7 +18,12 @@ export function createAdminApi(getCurrentUser: () => AdminUser | null): AdminApi
     const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
     return createHttpAdminApi(base);
   }
-  return createMockAdminApi({ storage: createLocalStorageMockStorage(), getCurrentUser });
+  return createMockAdminApi({
+    storage: createLocalStorageMockStorage(),
+    videoStore: createIndexedDbVideoStore(),
+    readVideoMetadata,
+    getCurrentUser,
+  });
 }
 
 export { AdminApiError, errorMessage } from "./admin-api";

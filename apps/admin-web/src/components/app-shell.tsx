@@ -15,7 +15,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { href: "/", label: "대시보드", permission: "content:read" },
-  { href: "/contents", label: "운동 콘텐츠", permission: "content:read" },
+  { href: "/contents", label: "운동 영상", permission: "content:read" },
   { href: "/jobs", label: "AI 제작 작업", permission: "job:read" },
   { href: "/audit", label: "감사 로그", permission: "audit:read" },
 ];

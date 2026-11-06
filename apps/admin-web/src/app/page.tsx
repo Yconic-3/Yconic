@@ -28,8 +28,8 @@ export default function DashboardPage() {
     <>
       <PageHeader
         title={`안녕하세요, ${user.name}님`}
-        description="AI가 만든 운동 콘텐츠를 검수하고 사용자에게 공개하는 곳입니다."
-        actions={hasPermission(user.role, "job:create") && <LinkButton href="/jobs/new" variant="primary">새 AI 제작 요청</LinkButton>}
+        description="운동 영상을 올리고, AI가 나눈 구간과 음성 안내를 검수해 사용자에게 공개하는 곳입니다."
+        actions={hasPermission(user.role, "job:create") && <LinkButton href="/jobs/new" variant="primary">영상 올리고 제작 요청</LinkButton>}
       />
 
       {contents.error && <Alert kind="error">{contents.error}</Alert>}

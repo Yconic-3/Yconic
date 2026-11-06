@@ -1,17 +1,18 @@
 import type { MockState } from "./seed";
 import type { MockStorage } from "./mock-admin-api";
 
-const KEY = "yconic.admin.mock-state.v1";
+const KEY = "yconic.admin.mock-state.v2";
 
 /** 브라우저 localStorage에 모의 데이터를 보관한다. 새로 고쳐도 유지된다. */
 export function createLocalStorageMockStorage(): MockStorage {
   return {
     load() {
       try {
+        if (typeof window === "undefined") return null;
         const raw = window.localStorage.getItem(KEY);
         if (!raw) return null;
         const parsed = JSON.parse(raw) as MockState;
-        return parsed.schemaVersion === 1 ? parsed : null;
+        return parsed.schemaVersion === 2 ? parsed : null;
       } catch {
         return null;
       }

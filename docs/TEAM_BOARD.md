@@ -12,11 +12,13 @@
 
 ---
 
-## 2026-11-06 · Yconic (관리자 웹 1차)
+## 2026-11-06 · Yconic (관리자 웹 1차 — 영상 중심으로 재작성)
 
-- 관리자 웹(`apps/admin-web`) 1차를 `feat/admin-web` 브랜치에 올렸다. `pnpm dev:admin`으로 실행하면 백엔드 없이 모의 데이터로 돌아간다.
-- 제작 요청 → AI 초안 → 편집·검사 → 음성 생성 → 검수 요청 → 승인 → 공개까지 한 번에 시연할 수 있다.
-- 백엔드 담당자: 필요한 엔드포인트는 `packages/shared-types/src/admin-api.ts` 주석을 봐 주세요. 요청·응답 형식은 shared-types 타입 그대로입니다.
+- **콘텐츠의 본체는 영상이다.** 관리자가 영상을 올리면 → 분석해서 타임라인 위에 구간을 나누고 → 구간마다 음성 안내를 붙인다. 사용자 앱은 영상을 재생하며 구간 시작 시각에 안내를 들려준다. 결정 기록: `docs/decisions/0002-영상-중심-콘텐츠-모델.md`
+- 관리자 웹(`apps/admin-web`)은 `feat/admin-web` 브랜치에 있다. `pnpm dev:admin`으로 실행하면 백엔드 없이 돌아간다. 실제 영상을 올려 보면 플레이어·타임라인·구간 편집·음성 미리 듣기까지 볼 수 있다.
+- **백엔드 담당자**: 엔드포인트 목록은 `packages/shared-types/src/admin-api.ts` 주석. 영상 업로드와 재생 주소 조회가 추가됐다.
+- **워커 담당자**: 분석 결과 형식은 `packages/shared-types/src/analysis.ts`. 이 모양으로 돌려주면 관리자 웹이 그대로 초안으로 보여 준다.
+- **사용자 앱 담당자**: 콘텐츠 모양은 `packages/shared-types/src/exercise.ts`. `segments[].startSec`에 맞춰 `tts.audioUrl`을 재생하면 된다.
 - 자세한 내용은 `apps/admin-web/README.md`.
 
 ## 2026-11-06 · Yconic

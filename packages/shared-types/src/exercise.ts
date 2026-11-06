@@ -20,7 +20,25 @@ export const DIFFICULTY_LABELS: Record<Difficulty, string> = {
   ADVANCED: "고급",
 };
 
-/** 단계별 음성 파일(TTS) 생성 상태 */
+/**
+ * 관리자가 올린 운동 영상 파일. 콘텐츠의 본체다.
+ * 실제 파일은 객체 스토리지(S3 호환)에 두고 여기에는 정보만 둔다.
+ */
+export interface VideoAsset {
+  id: Id;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  durationSec: number;
+  width: number;
+  height: number;
+  /** 재생 주소. 스토리지 연결 전 예시 데이터는 null */
+  url: string | null;
+  uploadedBy: Id;
+  uploadedAt: ISODateString;
+}
+
+/** 구간별 음성 파일(TTS) 생성 상태 */
 export const TTS_STATUSES = ["NONE", "REQUESTED", "GENERATING", "READY", "FAILED"] as const;
 export type TtsStatus = (typeof TTS_STATUSES)[number];
 
@@ -40,27 +58,50 @@ export interface TtsAsset {
   failureReason: string | null;
 }
 
-export interface ExerciseStep {
+export const SEGMENT_KINDS = ["INTRO", "EXERCISE", "REST", "OUTRO"] as const;
+export type SegmentKind = (typeof SEGMENT_KINDS)[number];
+
+export const SEGMENT_KIND_LABELS: Record<SegmentKind, string> = {
+  INTRO: "준비",
+  EXERCISE: "운동",
+  REST: "휴식",
+  OUTRO: "마무리",
+};
+
+/**
+ * 영상 타임라인 위의 한 구간.
+ * 사용자 앱은 영상을 재생하다가 구간이 시작되는 시각에 voiceGuide 음성을 들려준다.
+ */
+export interface ExerciseSegment {
   id: Id;
-  /** 1부터 시작하는 순서 */
+  /** 1부터 시작하는 순서. startSec 오름차순과 같아야 한다. */
   order: number;
+  kind: SegmentKind;
+  /** 영상에서의 시작 시각 (초) */
+  startSec: number;
+  /** 영상에서의 끝 시각 (초). 다음 구간의 시작보다 클 수 없다. */
+  endSec: number;
   title: string;
-  /** 동작 설명 (관리자 검수용, 사용자 화면의 텍스트 안내로도 사용) */
+  /** 영상에 보이는 동작 설명 (관리자 검수용) */
   instruction: string;
-  /** 시각장애인용 음성 안내문. 시각적 표현 없이 몸의 감각과 방향으로 설명한다. */
+  /** 구간이 시작될 때 읽어 주는 시각장애인용 음성 안내문. 시각 표현 없이 몸의 감각과 방향으로 설명한다. */
   voiceGuide: string;
-  durationSec: number;
   /** 반복 횟수. 시간 기반 동작이면 null */
   repetitions: number | null;
-  restAfterSec: number;
   tts: TtsAsset;
 }
 
-export interface SourceVideo {
-  fileName: string;
-  sizeBytes: number;
-  /** 객체 스토리지 URL. 업로드 전이거나 모의 환경이면 null */
-  url: string | null;
+export function segmentDurationSec(s: Pick<ExerciseSegment, "startSec" | "endSec">): number {
+  return Math.max(0, s.endSec - s.startSec);
+}
+
+/** 어떤 분석기가 언제 이 영상을 분석했는지. 사람이 구간을 고친 뒤에도 출처로 남긴다. */
+export interface AnalysisInfo {
+  /** 예: "mock", "claude-vision", "content-worker" */
+  provider: string;
+  model: string | null;
+  analyzedAt: ISODateString;
+  summary: string;
 }
 
 /**
@@ -89,6 +130,10 @@ export const CONTENT_STATUS_LABELS: Record<ContentStatus, string> = {
   ARCHIVED: "보관됨",
 };
 
+/**
+ * 운동 콘텐츠 = 영상 + 영상 위에 붙인 구간별 음성 안내.
+ * 사용자 앱은 video를 재생하면서 segments의 시각에 맞춰 안내를 들려준다.
+ */
 export interface ExerciseContent {
   id: Id;
   title: string;
@@ -96,12 +141,13 @@ export interface ExerciseContent {
   category: ExerciseCategory;
   difficulty: Difficulty;
   tags: string[];
-  /** 운동 전 주의사항 (통증·어지럼 시 중단 안내 등) */
+  /** 운동 전 주의사항 (통증·어지럼 시 중단 안내 등). 영상 시작 전에 읽어 준다. */
   precautions: string[];
-  steps: ExerciseStep[];
-  sourceVideo: SourceVideo | null;
+  video: VideoAsset;
+  segments: ExerciseSegment[];
+  analysis: AnalysisInfo | null;
   status: ContentStatus;
-  /** AI가 생성한 초안에서 시작했는지 여부 */
+  /** AI 분석 결과에서 시작했는지 여부 */
   aiGenerated: boolean;
   /** 관리자 내부 메모. 사용자 화면과 사용자 AI 답변에 절대 사용하지 않는다. */
   internalNote: string;
@@ -119,10 +165,6 @@ export interface ExerciseContent {
 /** 사용자 앱·사용자 AI가 볼 수 있는 콘텐츠인지 판단한다. 공개 중인 것만 허용한다. */
 export function isVisibleToUsers(content: Pick<ExerciseContent, "status">): boolean {
   return content.status === "PUBLISHED";
-}
-
-export function totalDurationSec(steps: Pick<ExerciseStep, "durationSec" | "restAfterSec">[]): number {
-  return steps.reduce((sum, s) => sum + s.durationSec + s.restAfterSec, 0);
 }
 
 /** 사용자 운동 세션 상태 (설계 문서 3장). 세션 상태는 백엔드가 관리한다. */

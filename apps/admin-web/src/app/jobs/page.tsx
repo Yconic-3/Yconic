@@ -9,6 +9,7 @@ import { errorMessage } from "@/lib/api";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { useAdmin } from "@/lib/session";
 import { useAsync, usePolling } from "@/lib/use-async";
+import { formatTimecode } from "@/lib/video";
 
 export default function JobsPage() {
   const { user, api } = useAdmin();
@@ -32,7 +33,7 @@ export default function JobsPage() {
     <>
       <PageHeader
         title="AI 제작 작업"
-        description="운동 영상을 올리면 AI가 영상을 분석해 단계, 설명문, 음성 안내를 만듭니다. 완료되면 초안 콘텐츠가 생깁니다."
+        description="운동 영상을 올리면 AI가 영상을 분석해 동작 구간을 나누고 구간별 음성 안내를 만듭니다. 완료되면 검수할 초안이 생깁니다."
         actions={canCreate && <LinkButton href="/jobs/new" variant="primary">새 AI 제작 요청</LinkButton>}
       />
       {(jobs.error || error) && <Alert kind="error">{jobs.error ?? error}</Alert>}
@@ -44,7 +45,7 @@ export default function JobsPage() {
               <div className="min-w-0">
                 <h2 className="truncate text-base font-semibold">{j.title}</h2>
                 <p className="text-xs text-slate-500">
-                  {EXERCISE_CATEGORY_LABELS[j.category]} · {DIFFICULTY_LABELS[j.difficulty]} · {j.sourceVideo.fileName} ({formatBytes(j.sourceVideo.sizeBytes)}) · 요청 {formatDateTime(j.createdAt)}
+                  {EXERCISE_CATEGORY_LABELS[j.category]} · {DIFFICULTY_LABELS[j.difficulty]} · {j.video.fileName} ({formatTimecode(j.video.durationSec)}, {formatBytes(j.video.sizeBytes)}) · 요청 {formatDateTime(j.createdAt)}
                 </p>
               </div>
               <JobStatusBadge status={j.status} />

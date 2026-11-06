@@ -5,6 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { createAdminApi, getApiMode, type AdminApi, type ApiMode } from "./api";
 import { MOCK_USERS } from "./api/mock/seed";
 import { resetMockStorage } from "./api/mock/storage";
+import { createIndexedDbVideoStore } from "./api/mock/video-store";
 
 const SESSION_KEY = "yconic.admin.session-user-id";
 
@@ -71,7 +72,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const resetData = useCallback(() => {
     resetMockStorage();
-    setApiKey((k) => k + 1);
+    void createIndexedDbVideoStore()
+      .clear()
+      .catch(() => undefined)
+      .finally(() => setApiKey((k) => k + 1));
   }, []);
 
   const value = useMemo<SessionValue>(
