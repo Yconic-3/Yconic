@@ -1,0 +1,29 @@
+{
+  "_설명": "이 파일을 .claude/settings.json 으로 복사하면 Claude Code 공유 권한 설정이 적용됩니다. (Claude가 자기 설정 파일을 직접 만들 수 없어 예시로 둡니다)",
+  "permissions": {
+    "allow": [
+      "Bash(git status*)",
+      "Bash(git log*)",
+      "Bash(git diff*)",
+      "Bash(git branch*)",
+      "Bash(git fetch*)",
+      "Bash(git pull*)",
+      "Bash(ls*)",
+      "Bash(find*)",
+      "Bash(grep*)",
+      "Bash(node --version)",
+      "Bash(pnpm --version)",
+      "Bash(pnpm install*)",
+      "Bash(pnpm run*)",
+      "Bash(pnpm test*)",
+      "Bash(pnpm lint*)",
+      "Bash(pnpm build*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)"
+    ]
+  }
+}

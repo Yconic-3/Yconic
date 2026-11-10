@@ -1,0 +1,22 @@
+{
+  "files.encoding": "utf8",
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "[markdown]": {
+    "files.trimTrailingWhitespace": false
+  },
+  "git.autofetch": true,
+  "git.confirmSync": false,
+  "git.enableSmartCommit": true,
+  "githubPullRequests.pullBranch": "always",
+  "githubIssues.createIssueTriggers": ["TODO", "FIXME", "질문", "논의"],
+  "files.exclude": {
+    "**/.git": true,
+    "**/node_modules": true
+  }
+}
