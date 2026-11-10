@@ -6,6 +6,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@yconic/admin-web", "dev"],
       "port": 3001
+    },
+    {
+      "name": "user-app",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@yconic/user-app", "dev"],
+      "port": 3000
     }
   ]
 }

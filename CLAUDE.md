@@ -24,6 +24,7 @@
 - 설치: `pnpm install`
 - 전체 테스트: `pnpm test` / 타입 검사: `pnpm typecheck`
 - 관리자 웹 실행: `pnpm dev:admin` (http://localhost:3001)
+- 사용자 앱 실행: `pnpm dev:user` (http://localhost:3000)
 - PR을 올리면 GitHub 자동 검사(`.github/workflows/ci.yml`)가 타입 검사·테스트·빌드를 돌린다. 푸시 전에 `pnpm typecheck && pnpm test && pnpm build`로 먼저 확인한다
 
 ## 작업 규칙
