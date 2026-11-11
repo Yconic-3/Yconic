@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./migrate": "./src/migrate.ts",
     "./seed": "./src/seed.ts",
-    "./password": "./src/password.ts"
+    "./password": "./src/password.ts",
+    "./server": "./src/server.ts"
   },
   "scripts": {
     "db:start": "tsx scripts/db-start.ts",

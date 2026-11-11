@@ -3,9 +3,10 @@ import type { ContentStatus, ExerciseContent } from "./exercise";
 import type { ContentAction } from "./workflow";
 
 /**
- * 관리자 API 요청 형식. 관리자 웹(admin-web)과 백엔드(api)가 이 형식으로 주고받는다.
+ * 관리자 API 요청 형식. 관리자 화면(apps/web/src/admin)과 백엔드(apps/api)가 이 형식으로 주고받는다.
+ * 모든 요청에 관리자 계정의 Authorization: Bearer <token> 이 필요하다 (없으면 401, 관리자가 아니면 403).
  * 백엔드 엔드포인트 제안:
- *   POST   /admin/videos                         multipart(file) → VideoAsset   (스토리지에 저장)
+ *   POST   /admin/videos                         multipart(file, durationSec, width, height) → VideoAsset (저장소에 저장)
  *   GET    /admin/videos/:id/playback-url        → { url }                      (서명된 재생 주소)
  *   DELETE /admin/videos/:id                     → 204   (작업·콘텐츠에 연결되지 않은 영상만. 연결돼 있으면 409)
  *   GET    /admin/contents?status=&query=        → ExerciseContent[]

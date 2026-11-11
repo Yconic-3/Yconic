@@ -12,6 +12,7 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "dev:web": "turbo run dev --filter=@yconic/web",
+    "dev:api": "turbo run dev --filter=@yconic/api",
     "db:start": "pnpm --filter @yconic/database db:start",
     "db:generate": "pnpm --filter @yconic/database db:generate",
     "db:migrate": "pnpm --filter @yconic/database db:migrate",
