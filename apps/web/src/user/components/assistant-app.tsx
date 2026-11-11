@@ -1,7 +1,10 @@
 "use client";
 
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { DIFFICULTY_LABELS, EXERCISE_CATEGORY_LABELS, type Difficulty } from "@yconic/shared-types";
+import { readSignedInAccount, signOut, type SignedInAccount } from "@/mock/auth";
 import { createUserApi, errorMessage, type PublishedExercise } from "@/user/lib/api";
 import { matchesFilter } from "@/user/lib/api/user-api";
 import { parseIntent } from "@/user/lib/intent";
@@ -10,13 +13,26 @@ import { formatDuration, SESSION_STATE_LABELS } from "@/user/lib/player";
 import { startListening, type Listener, type ListenError } from "@/user/lib/recognition";
 import { clampRate, RATE_STEP, speak, stopSpeaking } from "@/user/lib/speech";
 import { useExerciseSession } from "@/user/lib/use-exercise-session";
-import { Badge, Chip, LogoIcon, MicIcon, Panel } from "./ui";
+import { Badge, Brand, Chip, MicIcon, Panel } from "./ui";
 
 /*
  * 사용자 화면 — 디자인 시안 B (말벗핏 · 밝은 톤, 대화형 음성 비서)
- * 위에서부터: 머리말 → 가운데 큰 마이크와 바로 말하기 → 대화 → 운동 목록 또는 단계 카드 → 글로 입력
- * 운동을 고르면 화면 아래에 "지금 안내 중" 막대가 붙어 이전·시작·다음·다시를 늘 누를 수 있다.
+ * 처음 화면(/): 머리말 → 가운데 큰 마이크와 바로 말하기 → 대화 → 운동 목록 → 글로 입력
+ * 운동 화면(/exercises/[id]): 머리말 → 운동 영상 → 마이크 → 대화 → 단계 카드 → 글로 입력,
+ *   화면 아래에 "지금 안내 중" 막대가 붙어 이전·시작·다음·다시를 늘 누를 수 있다.
+ * 이 컴포넌트는 두 주소가 함께 쓰는 레이아웃에 있어서, 주소가 바뀌어도 마이크와 대화가 이어진다.
  */
+
+const EXERCISE_PATH = /^\/exercises\/([^/]+)\/?$/;
+
+export function exercisePath(id: string): string {
+  return `/exercises/${encodeURIComponent(id)}`;
+}
+
+function exerciseIdFromPath(pathname: string | null): string | null {
+  const m = pathname ? EXERCISE_PATH.exec(pathname) : null;
+  return m ? decodeURIComponent(m[1]!) : null;
+}
 
 const GREETING = '안녕하세요. 어떤 운동을 할까요? "하체 운동 찾아줘", "스쿼트 시작"처럼 말해 주세요.';
 const SAFETY_MESSAGE =
@@ -51,6 +67,15 @@ function exerciseMeta(e: PublishedExercise): string {
 
 export function AssistantApp() {
   const api = useMemo(() => createUserApi(), []);
+  const router = useRouter();
+  const pathname = usePathname();
+  const routeExerciseId = exerciseIdFromPath(pathname);
+  const [account, setAccount] = useState<SignedInAccount | null>(null);
+
+  // 로그인 상태는 브라우저 저장소에 있으므로 화면이 뜬 뒤에 읽는다. 로그인 페이지에서 돌아오면 다시 읽는다.
+  useEffect(() => {
+    setAccount(readSignedInAccount());
+  }, [pathname]);
 
   const [exercises, setExercises] = useState<PublishedExercise[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -88,7 +113,11 @@ export function AssistantApp() {
     void loadExercises();
   }, [loadExercises]);
 
-  const view = nav.current;
+  // 운동 화면은 주소(/exercises/[id])가 정하고, 처음 화면 안의 목록 거르기는 nav가 기억한다.
+  const view: View = useMemo(
+    () => (routeExerciseId ? { name: "exercise", exerciseId: routeExerciseId } : nav.current),
+    [routeExerciseId, nav],
+  );
 
   // 화면이 바뀌면 맨 위로 올리고 제목으로 초점을 옮겨, 스크린리더가 새 화면의 처음부터 읽게 한다.
   useEffect(() => {
@@ -97,13 +126,20 @@ export function AssistantApp() {
       return;
     }
     window.scrollTo({ top: 0 });
-    headingRef.current?.focus();
+    headingRef.current?.focus({ preventScroll: true });
   }, [view]);
 
   const exercise = useMemo(
     () => (view.name === "exercise" ? (exercises?.find((e) => e.id === view.exerciseId) ?? null) : null),
     [exercises, view],
   );
+  /** 주소의 운동이 공개 목록에 없을 때 (공개 중단, 잘못된 주소) */
+  const exerciseMissing = view.name === "exercise" && exercises !== null && !exercise;
+
+  // 탭 제목에 지금 운동 이름을 넣어, 스크린리더와 브라우저 기록에서 어느 화면인지 알 수 있게 한다.
+  // 운동 이름은 브라우저에서만 알 수 있어 Next.js 메타데이터로 줄 수 없다.
+  // 그래서 사용자 화면은 레이아웃에 제목을 두지 않고, 아래에서 <title>을 직접 그린다 (React가 head로 옮긴다).
+  const pageTitle = exercise ? `${exercise.title} — 말벗핏` : "말벗핏 — 대화형 음성 운동 비서";
 
   /** 대화에 남기고 소리 내어 읽는다. 끝까지 읽으면 true */
   const say = useCallback(
@@ -171,25 +207,41 @@ export function AssistantApp() {
     [exercises],
   );
 
-  const openExercise = useCallback((id: string, autoplay: boolean) => {
-    stopSpeaking();
-    autoplayRef.current = autoplay;
-    setNav((n) => navigate(n, { name: "exercise", exerciseId: id }));
-  }, []);
+  /** 운동 화면(/exercises/[id])으로 간다. 마이크와 대화는 그대로 이어진다. */
+  const openExercise = useCallback(
+    (id: string, autoplay: boolean) => {
+      stopSpeaking();
+      autoplayRef.current = autoplay;
+      router.push(exercisePath(id));
+    },
+    [router],
+  );
 
   const handleHome = useCallback(() => {
     stopSpeaking();
     setNav(goHome());
+    if (routeExerciseId) router.push("/");
     void say("처음 화면이에요. 어떤 운동을 할까요?");
-  }, [say]);
+  }, [routeExerciseId, router, say]);
 
   const handleBack = useCallback(() => {
     stopSpeaking();
+    if (routeExerciseId) {
+      // 운동 화면에서는 처음 화면으로 돌아간다. 거르던 목록이 있으면 그 목록이 그대로 나온다.
+      router.push("/");
+      void say(`이전 화면, ${viewName(nav.current)}이에요.`);
+      return;
+    }
     const next = goBack(nav);
     setNav(next);
-    // 운동 화면으로 돌아가면 그 화면이 스스로 안내한다.
-    if (next.current.name !== "exercise") void say(`이전 화면, ${viewName(next.current)}이에요.`);
-  }, [nav, say, viewName]);
+    void say(`이전 화면, ${viewName(next.current)}이에요.`);
+  }, [nav, routeExerciseId, router, say, viewName]);
+
+  const handleLogout = useCallback(() => {
+    signOut();
+    setAccount(null);
+    void say("로그아웃했어요.");
+  }, [say]);
 
   const changeRate = useCallback(
     (delta: number) => {
@@ -229,6 +281,7 @@ export function AssistantApp() {
           const found = all.filter((e) => matchesFilter(e, { category: intent.category ?? undefined, keyword: intent.keyword ?? undefined }));
           stopSpeaking();
           setNav((n) => navigate(n, target));
+          if (routeExerciseId) router.push("/");
           const label = intent.category ? EXERCISE_CATEGORY_LABELS[intent.category] : (intent.keyword ?? "");
           void say(
             found.length
@@ -281,7 +334,7 @@ export function AssistantApp() {
           return;
       }
     },
-    [addMessage, changeRate, exercise, exercises, handleBack, handleHome, openExercise, say],
+    [addMessage, changeRate, exercise, exercises, handleBack, handleHome, openExercise, routeExerciseId, router, say],
   );
 
   const handleCommandRef = useRef(handleCommand);
@@ -350,17 +403,35 @@ export function AssistantApp() {
 
   return (
     <div className="flex min-h-dvh flex-col">
+      <title>{pageTitle}</title>
       {/* ── 머리말 ── */}
       <header className="border-b-2 border-line bg-bg">
         <div className="mx-auto flex max-w-[980px] flex-wrap items-center gap-x-5 gap-y-3 px-4 py-[18px]">
-          <div className="flex items-center gap-3">
-            <span className="text-accent">
-              <LogoIcon />
-            </span>
-            <span className="whitespace-nowrap font-display text-[28px] font-black">말벗핏</span>
-            <span className="hidden text-base text-ink-3 sm:inline">말로 묻고, 말로 안내받는 운동 비서</span>
-          </div>
+          <Brand />
           <div className="ml-auto flex flex-wrap items-center gap-2">
+            {account ? (
+              <>
+                <span className="rounded-full bg-sand px-3.5 py-2 text-base font-bold">{account.name}님</span>
+                {account.adminUserId && (
+                  <Link
+                    href="/admin"
+                    className="flex min-h-[52px] items-center rounded-full bg-ink px-[18px] font-bold text-white no-underline hover:bg-ink-2"
+                  >
+                    관리자 페이지
+                  </Link>
+                )}
+                <button type="button" onClick={handleLogout} className="min-h-[52px] rounded-full border-2 border-control bg-surface px-[18px] font-bold text-ink">
+                  로그아웃
+                </button>
+              </>
+            ) : (
+              <Link
+                href={`/login?next=${encodeURIComponent(pathname ?? "/")}`}
+                className="flex min-h-[52px] items-center rounded-full border-2 border-ink bg-surface px-[18px] font-bold text-ink no-underline hover:bg-sand"
+              >
+                로그인
+              </Link>
+            )}
             <span className="rounded-full bg-sand px-3.5 py-2 text-base font-bold">말 속도 {rate.toFixed(2)}배</span>
             <button
               type="button"
@@ -378,11 +449,59 @@ export function AssistantApp() {
         id="main"
         className={`mx-auto box-border flex w-full max-w-[980px] flex-1 flex-col gap-8 px-4 pt-9 ${exercise ? "pb-40" : "pb-16"}`}
       >
+        {/* ── 운동 화면: 그 운동의 영상 ── */}
+        {exercise && (
+          <section aria-labelledby="exercise-title" className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <h1 id="exercise-title" ref={headingRef} tabIndex={-1} className="m-0 font-display text-[clamp(28px,5vw,40px)] font-black leading-tight">
+                {exercise.title}
+              </h1>
+              <Badge tone={DIFFICULTY_TONE[exercise.difficulty]}>{DIFFICULTY_LABELS[exercise.difficulty]}</Badge>
+              <span className="text-lg text-ink-3">{exerciseMeta(exercise)}</span>
+              <Chip className="ml-auto min-h-[48px] text-[17px]" onClick={handleHome}>
+                운동 목록으로
+              </Chip>
+            </div>
+            {exercise.summary && <p className="m-0 text-ink-2">{exercise.summary}</p>}
+            {videoUrl ? (
+              // 영상의 소리와 음성 안내가 함께 나온다. 자막 파일은 아직 없다.
+              <video
+                ref={videoRef}
+                src={videoUrl}
+                controls
+                playsInline
+                preload="metadata"
+                className="aspect-video w-full rounded-[22px] bg-ink"
+                aria-label={`${exercise.title} 영상`}
+              />
+            ) : (
+              <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-[22px] border-2 border-line bg-surface px-6 text-center">
+                <p className="m-0 text-xl font-bold">아직 올라온 영상 파일이 없어요</p>
+                <p className="m-0 text-ink-3">시작을 누르면 영상 없이 시간에 맞춰 구간 안내를 들려 드려요.</p>
+              </div>
+            )}
+          </section>
+        )}
+
+        {exerciseMissing && (
+          <Panel id="missing-title" title="운동을 찾을 수 없어요">
+            <p className="m-0 text-ink-2">공개가 끝났거나 주소가 잘못되었어요. 운동 목록에서 다시 골라 주세요.</p>
+            <Chip className="self-start" onClick={handleHome}>
+              운동 목록으로
+            </Chip>
+          </Panel>
+        )}
+
         {/* ── 가운데 음성 비서 ── */}
         <section aria-label="음성 비서" className="flex flex-col items-center gap-5 text-center">
-          <h1 ref={headingRef} tabIndex={-1} className="m-0 font-display text-[clamp(30px,6vw,44px)] font-black leading-tight">
-            {headline}
-          </h1>
+          {exercise ? (
+            // 운동 화면의 페이지 제목은 위의 운동 이름이다. 여기는 지금 상태를 크게 알린다.
+            <p className="m-0 font-display text-[clamp(26px,5vw,36px)] font-black leading-tight">{headline}</p>
+          ) : (
+            <h1 ref={headingRef} tabIndex={-1} className="m-0 font-display text-[clamp(30px,6vw,44px)] font-black leading-tight">
+              {headline}
+            </h1>
+          )}
           <p className="m-0 max-w-[640px] font-display text-[21px] text-ink-3">{subline}</p>
           <button
             type="button"
@@ -493,24 +612,7 @@ export function AssistantApp() {
 
         {/* ── 단계 ── */}
         {exercise && (
-          <Panel
-            id="steps-title"
-            title={`${exercise.title} 단계`}
-            actions={
-              <>
-                <Badge tone={DIFFICULTY_TONE[exercise.difficulty]}>{DIFFICULTY_LABELS[exercise.difficulty]}</Badge>
-                <Chip className="min-h-[48px] text-[17px]" onClick={handleHome}>
-                  운동 목록으로
-                </Chip>
-              </>
-            }
-          >
-            {videoUrl ? (
-              // 영상의 소리와 음성 안내가 함께 나온다. 자막 파일은 아직 없다.
-              <video ref={videoRef} src={videoUrl} playsInline preload="metadata" className="w-full rounded-[14px] bg-ink" aria-label={`${exercise.title} 영상`} />
-            ) : (
-              <p className="m-0 text-lg text-ink-3">이 운동은 영상 없이 음성 안내로 진행합니다.</p>
-            )}
+          <Panel id="steps-title" title={`${exercise.title} 단계`}>
             <ol className="m-0 flex list-none flex-col gap-2.5 p-0">
               {exercise.segments.map((seg, i) => {
                 const current = i === session.segmentIndex;
@@ -570,6 +672,14 @@ export function AssistantApp() {
             보내기
           </button>
         </form>
+
+        {/* ── 관리자 페이지로 가는 길 ── */}
+        <footer className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-t-2 border-line pt-6 text-lg text-ink-3">
+          <span>운동 영상을 올리고 관리하는 분인가요?</span>
+          <Link href="/admin" className="font-bold text-accent underline underline-offset-4 hover:text-accent-strong">
+            관리자 페이지로 가기
+          </Link>
+        </footer>
       </main>
 
       {/* ── 지금 안내 중 (운동을 골랐을 때 화면 아래에 붙는다) ── */}

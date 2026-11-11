@@ -3,7 +3,7 @@
 import { ADMIN_ROLE_LABELS, hasPermission, type AdminPermission } from "@yconic/shared-types";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useSession } from "@/admin/lib/session";
 import { Button } from "./ui";
 
@@ -21,16 +21,25 @@ const NAV: NavItem[] = [
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { ready, user, logout, mode, resetData } = useSession();
+  const { ready, account, user, logout, mode, resetData } = useSession();
   const pathname = usePathname();
   const router = useRouter();
   const isLogin = pathname === "/admin/login";
+  const leavingRef = useRef(false);
 
+  // 관리자로 로그인하지 않았으면 공통 로그인 페이지로 보낸다. 로그인 뒤 지금 주소로 돌아온다.
+  // 일반 회원으로 로그인한 상태면 관리자 계정이 필요하다는 안내가 함께 나온다.
   useEffect(() => {
-    if (!ready) return;
-    if (!user && !isLogin) router.replace("/admin/login");
-    if (user && isLogin) router.replace("/admin");
-  }, [ready, user, isLogin, router]);
+    if (!ready || leavingRef.current || isLogin || user) return;
+    const reason = account ? "&reason=admin-only" : "";
+    router.replace(`/login?next=${encodeURIComponent(pathname)}${reason}`);
+  }, [ready, user, account, isLogin, pathname, router]);
+
+  function handleLogout() {
+    leavingRef.current = true;
+    logout();
+    router.replace("/");
+  }
 
   if (!ready) {
     return (
@@ -75,12 +84,19 @@ export function AppShell({ children }: { children: ReactNode }) {
               );
             })}
           </ul>
+          <p className="mt-4 border-t border-slate-100 px-3 pt-3">
+            <Link href="/" className="text-sm text-slate-600 hover:text-blue-700 hover:underline">
+              ← 사용자 화면으로
+            </Link>
+          </p>
         </nav>
         <div className="border-t border-slate-200 px-4 py-3 text-sm">
           <p className="font-medium">{user.name}</p>
-          <p className="text-xs text-slate-500">{ADMIN_ROLE_LABELS[user.role]}</p>
+          <p className="text-xs text-slate-500">
+            {ADMIN_ROLE_LABELS[user.role]} · {user.email}
+          </p>
           <div className="mt-2 flex flex-wrap gap-1">
-            <Button variant="ghost" className="px-2 py-1 text-xs" onClick={logout}>
+            <Button variant="ghost" className="px-2 py-1 text-xs" onClick={handleLogout}>
               로그아웃
             </Button>
             {mode === "mock" && (

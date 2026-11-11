@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 
+// 제목은 두지 않는다. 사용자 화면은 운동 이름에 따라 페이지가 직접 <title>을 그린다 (AssistantApp, 로그인 페이지).
 export const metadata: Metadata = {
-  title: "말벗핏 — 대화형 음성 운동 비서",
   description: "화면을 보지 않아도 말로 운동을 찾고 구간별 음성 안내를 들으며 운동할 수 있습니다.",
 };
 

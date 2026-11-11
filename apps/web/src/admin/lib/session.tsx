@@ -3,21 +3,19 @@
 import type { AdminUser } from "@yconic/shared-types";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createAdminApi, getApiMode, type AdminApi, type ApiMode } from "./api";
-import { MOCK_USERS } from "@/mock/seed";
+import { adminUserOf, readSignedInAccount, signOut, type SignedInAccount } from "@/mock/auth";
 import { resetMockStorage } from "@/mock/storage";
 import { createIndexedDbVideoStore } from "@/mock/video-store";
-
-const SESSION_KEY = "yconic.admin.session-user-id";
 
 interface SessionValue {
   /** 브라우저 저장소를 읽어 로그인 여부가 확정되었는지 */
   ready: boolean;
+  /** 로그인한 계정 (일반 회원일 수도 있다) */
+  account: SignedInAccount | null;
+  /** 관리자 계정으로 로그인했을 때의 관리자. 일반 회원이거나 로그인 전이면 null */
   user: AdminUser | null;
   api: AdminApi;
   mode: ApiMode;
-  /** 모의 모드에서 고를 수 있는 계정 목록 */
-  users: AdminUser[];
-  login(userId: string): void;
   logout(): void;
   /** 모의 데이터를 처음 상태로 되돌린다 (모의 모드 전용) */
   resetData(): void;
@@ -25,48 +23,29 @@ interface SessionValue {
 
 const SessionContext = createContext<SessionValue | null>(null);
 
+/**
+ * 관리자 화면의 로그인 상태.
+ * 로그인은 사용자 화면과 같은 /login 페이지에서 한다 (src/mock/auth.ts).
+ */
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AdminUser | null>(null);
+  const [account, setAccount] = useState<SignedInAccount | null>(null);
   const [ready, setReady] = useState(false);
+  const user = useMemo(() => adminUserOf(account), [account]);
   const userRef = useRef<AdminUser | null>(null);
   userRef.current = user;
 
   const mode = getApiMode();
-  const users = mode === "mock" ? MOCK_USERS : [];
   const [apiKey, setApiKey] = useState(0);
   const api = useMemo(() => createAdminApi(() => userRef.current), [apiKey]);
 
   useEffect(() => {
-    try {
-      const id = window.localStorage.getItem(SESSION_KEY);
-      setUser(users.find((u) => u.id === id) ?? null);
-    } catch {
-      setUser(null);
-    }
+    setAccount(readSignedInAccount());
     setReady(true);
-    // users는 모드에 따라 고정된 목록이다.
   }, []);
 
-  const login = useCallback(
-    (userId: string) => {
-      const u = users.find((x) => x.id === userId) ?? null;
-      setUser(u);
-      try {
-        if (u) window.localStorage.setItem(SESSION_KEY, u.id);
-      } catch {
-        // 저장 실패는 무시 (새로 고치면 로그아웃됨)
-      }
-    },
-    [users],
-  );
-
   const logout = useCallback(() => {
-    setUser(null);
-    try {
-      window.localStorage.removeItem(SESSION_KEY);
-    } catch {
-      // 무시
-    }
+    signOut();
+    setAccount(null);
   }, []);
 
   const resetData = useCallback(() => {
@@ -78,8 +57,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<SessionValue>(
-    () => ({ ready, user, api, mode, users, login, logout, resetData }),
-    [ready, user, api, mode, users, login, logout, resetData],
+    () => ({ ready, account, user, api, mode, logout, resetData }),
+    [ready, account, user, api, mode, logout, resetData],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

@@ -8,8 +8,8 @@ import "./globals.css";
  * - 관리자 화면: /admin   → app/admin, 코드는 src/admin
  * 두 화면이 함께 쓰는 모의 백엔드는 src/mock에 있다.
  */
+// 제목은 영역별로 정한다: 관리자 화면은 app/admin/layout.tsx 메타데이터, 사용자 화면은 페이지가 직접 그린다.
 export const metadata: Metadata = {
-  title: "말벗핏",
   description: "화면을 보지 않아도 말로 운동을 찾고 구간별 음성 안내를 들으며 운동할 수 있습니다.",
 };
 

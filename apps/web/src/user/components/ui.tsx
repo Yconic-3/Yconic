@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 /**
@@ -42,6 +43,25 @@ export function Badge({ tone, children }: { tone: "warm" | "cool" | "sand"; chil
     sand: "bg-sand text-ink",
   }[tone];
   return <span className={`rounded-full px-3 py-1 text-[15px] font-bold ${cls}`}>{children}</span>;
+}
+
+/** 머리말의 로고와 이름. 누르면 처음 화면으로 간다. */
+export function Brand({ showTagline = true }: { showTagline?: boolean }) {
+  return (
+    <Link href="/" className="flex items-center gap-3 text-ink no-underline" aria-label="말벗핏 처음 화면">
+      <span className="text-accent">
+        <LogoIcon />
+      </span>
+      <span className="whitespace-nowrap font-display text-[28px] font-black" aria-hidden>
+        말벗핏
+      </span>
+      {showTagline && (
+        <span className="hidden text-base text-ink-3 sm:inline" aria-hidden>
+          말로 묻고, 말로 안내받는 운동 비서
+        </span>
+      )}
+    </Link>
+  );
 }
 
 export function LogoIcon() {
