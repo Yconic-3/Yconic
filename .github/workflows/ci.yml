@@ -21,8 +21,24 @@ jobs:
     name: 타입 검사 · 테스트 · 빌드
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # API 테스트용 데이터베이스. 테스트가 마이그레이션과 처음 데이터를 직접 넣는다.
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: yconic
+          POSTGRES_PASSWORD: yconic
+          POSTGRES_DB: yconic_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U yconic"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       NEXT_TELEMETRY_DISABLED: 1
+      TEST_DATABASE_URL: postgres://yconic:yconic@localhost:5432/yconic_test
     steps:
       - uses: actions/checkout@v5
 
