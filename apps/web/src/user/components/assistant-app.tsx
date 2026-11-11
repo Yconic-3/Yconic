@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { DIFFICULTY_LABELS, EXERCISE_CATEGORY_LABELS, type Difficulty } from "@yconic/shared-types";
-import { readSignedInAccount, signOut, type SignedInAccount } from "@/mock/auth";
+import { readSignedInAccount, signOut, type SignedInAccount } from "@/lib/auth";
 import { createUserApi, errorMessage, type PublishedExercise } from "@/user/lib/api";
 import { matchesFilter } from "@/user/lib/api/user-api";
 import { parseIntent } from "@/user/lib/intent";
@@ -412,7 +412,7 @@ export function AssistantApp() {
             {account ? (
               <>
                 <span className="rounded-full bg-sand px-3.5 py-2 text-base font-bold">{account.name}님</span>
-                {account.adminUserId && (
+                {account.adminRole && (
                   <Link
                     href="/admin"
                     className="flex min-h-[52px] items-center rounded-full bg-ink px-[18px] font-bold text-white no-underline hover:bg-ink-2"

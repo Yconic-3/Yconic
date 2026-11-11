@@ -4,17 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState, type FormEvent } from "react";
 import { ADMIN_ROLE_LABELS } from "@yconic/shared-types";
-import {
-  adminUserOf,
-  isSignInError,
-  MOCK_ACCOUNTS,
-  readSignedInAccount,
-  safeNextPath,
-  SIGN_IN_ERROR_TEXT,
-  signIn,
-  signOut,
-  type SignedInAccount,
-} from "@/mock/auth";
+import { DEMO_ACCOUNTS, readSignedInAccount, safeNextPath, signIn, signOut, type SignedInAccount } from "@/lib/auth";
 import { Brand, Panel } from "@/user/components/ui";
 
 export default function LoginPage() {
@@ -25,9 +15,8 @@ export default function LoginPage() {
   );
 }
 
-function accountLabel(a: Pick<SignedInAccount, "adminUserId">): string {
-  const admin = adminUserOf({ id: "", name: "", email: "", adminUserId: a.adminUserId });
-  return admin ? `관리자 · ${ADMIN_ROLE_LABELS[admin.role]}` : "일반 회원";
+function accountLabel(a: Pick<SignedInAccount, "adminRole">): string {
+  return a.adminRole ? `관리자 · ${ADMIN_ROLE_LABELS[a.adminRole]}` : "일반 회원";
 }
 
 function LoginForm() {
@@ -41,6 +30,7 @@ function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -50,7 +40,7 @@ function LoginForm() {
 
   function finish(account: SignedInAccount) {
     // 관리자 화면으로 가려는데 일반 회원이면 들여보내지 않고 안내한다.
-    if (goingToAdmin && !account.adminUserId) {
+    if (goingToAdmin && !account.adminRole) {
       setCurrent(account);
       setError("관리자 화면은 관리자 계정으로만 들어갈 수 있습니다. 아래 관리자 계정으로 다시 로그인해 주세요.");
       return;
@@ -58,22 +48,28 @@ function LoginForm() {
     router.replace(next);
   }
 
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    const result = signIn(email, password);
-    if (isSignInError(result)) {
-      setError(SIGN_IN_ERROR_TEXT[result]);
+  async function attempt(accountEmail: string, accountPassword: string) {
+    if (busy) return;
+    setBusy(true);
+    const result = await signIn(accountEmail, accountPassword);
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.message);
       return;
     }
     setError(null);
-    finish(result);
+    finish(result.account);
+  }
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    void attempt(email, password);
   }
 
   function quickSignIn(accountEmail: string, accountPassword: string) {
     setEmail(accountEmail);
     setPassword(accountPassword);
-    const result = signIn(accountEmail, accountPassword);
-    if (!isSignInError(result)) finish(result);
+    void attempt(accountEmail, accountPassword);
   }
 
   function logout() {
@@ -104,7 +100,7 @@ function LoginForm() {
           </p>
         </div>
 
-        {(adminOnly || (goingToAdmin && current && !current.adminUserId)) && !error && (
+        {(adminOnly || (goingToAdmin && current && !current.adminRole)) && !error && (
           <p role="alert" className="m-0 rounded-xl border-2 border-accent-soft bg-accent-tint px-4 py-3.5 text-warn-ink">
             지금 로그인한 계정은 일반 회원이라 관리자 화면에 들어갈 수 없습니다. 관리자 계정으로 로그인해 주세요.
           </p>
@@ -154,19 +150,25 @@ function LoginForm() {
                 {error}
               </p>
             )}
-            <button type="submit" className="min-h-[60px] rounded-[14px] bg-ink px-[22px] text-xl font-bold text-white">
-              로그인
+            <button
+              type="submit"
+              disabled={busy}
+              aria-busy={busy}
+              className="min-h-[60px] rounded-[14px] bg-ink px-[22px] text-xl font-bold text-white disabled:opacity-60"
+            >
+              {busy ? "확인하는 중…" : "로그인"}
             </button>
           </form>
         </Panel>
 
         <Panel id="demo-accounts-title" title="체험용 계정">
-          <p className="m-0 text-lg text-ink-3">백엔드가 준비되기 전에 쓰는 시연용 계정입니다. 누르면 그 계정으로 바로 로그인합니다.</p>
+          <p className="m-0 text-lg text-ink-3">개발·시연용 계정입니다 (DB 처음 데이터와 같습니다). 누르면 그 계정으로 바로 로그인합니다.</p>
           <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
-            {MOCK_ACCOUNTS.map((a) => (
+            {DEMO_ACCOUNTS.map((a) => (
               <li key={a.id}>
                 <button
                   type="button"
+                  disabled={busy}
                   onClick={() => quickSignIn(a.email, a.password)}
                   aria-label={`${a.name}, ${accountLabel(a)} 계정으로 로그인`}
                   className="flex min-h-[64px] w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-[14px] border-2 border-control bg-bg px-[18px] py-3 text-left text-ink hover:border-ink"

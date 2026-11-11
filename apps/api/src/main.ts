@@ -3,6 +3,13 @@ import { connectDatabase, databaseUrl } from "@yconic/database";
 import { loadConfig } from "./config";
 import { createApp } from "./create-app";
 
+// apps/api/.env 가 있으면 읽는다 (.env.example 참고)
+try {
+  process.loadEnvFile(".env");
+} catch {
+  // 없으면 기본값을 쓴다
+}
+
 const config = loadConfig();
 const { db, close } = connectDatabase();
 const app = await createApp({ config, db });
