@@ -1,0 +1,21 @@
+# Docker가 있는 환경(서버, Docker를 쓰는 팀원)용 데이터베이스.
+# 내 컴퓨터에서는 Docker 없이 `pnpm db:start`(프로젝트 안 PostgreSQL)를 써도 된다. 두 방법의 접속 정보는 같다.
+#   docker compose -f infrastructure/docker-compose.yml up -d
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: yconic
+      POSTGRES_PASSWORD: yconic
+      POSTGRES_DB: yconic
+    ports:
+      - "5433:5432"
+    volumes:
+      - yconic-pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U yconic -d yconic"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  yconic-pgdata:
