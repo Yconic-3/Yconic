@@ -1,0 +1,4 @@
+{
+  "extends": "@yconic/config/tsconfig.base.json",
+  "include": ["src"]
+}

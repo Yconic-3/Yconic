@@ -1,4 +1,5 @@
 import type { AdminUser } from "@yconic/shared-types";
+import { FIXTURE_ACCOUNTS } from "@yconic/fixtures";
 import { MOCK_USERS } from "./seed";
 
 /**
@@ -21,16 +22,14 @@ export interface MockAccount {
 /** 로그인한 사람. 비밀번호는 담지 않는다. */
 export type SignedInAccount = Omit<MockAccount, "password">;
 
-export const MOCK_ACCOUNTS: MockAccount[] = [
-  { id: "m-member", name: "체험 회원", email: "member@example.com", password: "member1234", adminUserId: null },
-  ...MOCK_USERS.map((u) => ({
-    id: `m-${u.id}`,
-    name: u.name,
-    email: u.email,
-    password: `${u.email.split("@")[0]}1234`,
-    adminUserId: u.id,
-  })),
-];
+/** 시연용 계정 (@yconic/fixtures). DB 처음 데이터와 같은 계정이다. */
+export const MOCK_ACCOUNTS: MockAccount[] = FIXTURE_ACCOUNTS.map((a) => ({
+  id: a.id,
+  name: a.name,
+  email: a.email,
+  password: a.password,
+  adminUserId: a.adminRole ? a.id : null,
+}));
 
 const SESSION_KEY = "yconic.session.account-id";
 

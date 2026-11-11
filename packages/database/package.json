@@ -6,13 +6,22 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./migrate": "./src/migrate.ts",
+    "./seed": "./src/seed.ts",
+    "./password": "./src/password.ts"
   },
   "scripts": {
     "db:start": "tsx scripts/db-start.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx scripts/db-setup.ts migrate",
+    "db:seed": "tsx scripts/db-setup.ts seed",
+    "db:setup": "tsx scripts/db-setup.ts migrate seed",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@yconic/fixtures": "workspace:*",
     "@yconic/shared-types": "workspace:*",
     "drizzle-orm": "^0.45.4",
     "embedded-postgres": "18.6.0-beta.19",

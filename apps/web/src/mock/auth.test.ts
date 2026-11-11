@@ -4,12 +4,12 @@ import { adminUserOf, MOCK_ACCOUNTS, safeNextPath, verifyCredentials } from "./a
 describe("모의 로그인", () => {
   it("맞는 이메일·비밀번호면 계정을 돌려주고 비밀번호는 빼고 준다", () => {
     const result = verifyCredentials("member@example.com", "member1234");
-    expect(result).toMatchObject({ id: "m-member", name: "체험 회원", adminUserId: null });
+    expect(result).toMatchObject({ id: "u-member", name: "체험 회원", adminUserId: null });
     expect(result).not.toHaveProperty("password");
   });
 
   it("이메일은 대소문자와 앞뒤 빈칸을 가리지 않는다", () => {
-    expect(verifyCredentials("  Member@Example.com ", "member1234")).toMatchObject({ id: "m-member" });
+    expect(verifyCredentials("  Member@Example.com ", "member1234")).toMatchObject({ id: "u-member" });
   });
 
   it("틀린 경우를 구분해서 알려 준다", () => {

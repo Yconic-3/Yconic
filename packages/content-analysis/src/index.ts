@@ -1,3 +1,7 @@
+/**
+ * 영상 분석기. content-worker(지금은 API 서버의 작업기)와 웹앱 모의 모드가 함께 쓴다.
+ * 실제 분석(프레임 추출 + 비전 모델)은 VideoAnalyzer 인터페이스를 구현해 바꿔 끼운다.
+ */
 import {
   DIFFICULTY_LABELS,
   EXERCISE_CATEGORY_LABELS,

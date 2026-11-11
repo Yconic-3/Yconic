@@ -12,7 +12,11 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "dev:web": "turbo run dev --filter=@yconic/web",
-    "db:start": "pnpm --filter @yconic/database db:start"
+    "db:start": "pnpm --filter @yconic/database db:start",
+    "db:generate": "pnpm --filter @yconic/database db:generate",
+    "db:migrate": "pnpm --filter @yconic/database db:migrate",
+    "db:seed": "pnpm --filter @yconic/database db:seed",
+    "db:setup": "pnpm --filter @yconic/database db:setup"
   },
   "devDependencies": {
     "turbo": "^2.11.10",

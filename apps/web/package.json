@@ -11,6 +11,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@yconic/content-analysis": "workspace:*",
+    "@yconic/fixtures": "workspace:*",
     "@yconic/shared-types": "workspace:*",
     "next": "^16.4.5",
     "react": "^19.3.1",

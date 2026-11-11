@@ -17,6 +17,12 @@ importers:
 
   apps/web:
     dependencies:
+      '@yconic/content-analysis':
+        specifier: workspace:*
+        version: link:../../packages/content-analysis
+      '@yconic/fixtures':
+        specifier: workspace:*
+        version: link:../../packages/fixtures
       '@yconic/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
@@ -57,8 +63,24 @@ importers:
 
   packages/config: {}
 
+  packages/content-analysis:
+    dependencies:
+      '@yconic/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+    devDependencies:
+      '@yconic/config':
+        specifier: workspace:*
+        version: link:../config
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
   packages/database:
     dependencies:
+      '@yconic/fixtures':
+        specifier: workspace:*
+        version: link:../fixtures
       '@yconic/shared-types':
         specifier: workspace:*
         version: link:../shared-types
@@ -84,6 +106,22 @@ importers:
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
+  packages/fixtures:
+    dependencies:
+      '@yconic/content-analysis':
+        specifier: workspace:*
+        version: link:../content-analysis
+      '@yconic/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+    devDependencies:
+      '@yconic/config':
+        specifier: workspace:*
+        version: link:../config
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
