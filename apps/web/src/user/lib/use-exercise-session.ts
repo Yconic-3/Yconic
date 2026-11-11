@@ -183,7 +183,9 @@ export function useExerciseSession(
       if (!ex || ex.segments.length === 0) return;
       const target = clampSegmentIndex(ex.segments, index);
       const sec = segmentStartSec(ex.segments, target);
-      if (readingPrecautions) {
+      // 시작 직후 주의사항을 읽는 중에 단계를 옮기면, 낭독을 끊고 그 단계부터 바로 재생한다.
+      const skippingIntro = readingPrecautions;
+      if (skippingIntro) {
         runRef.current++;
         setReadingPrecautions(false);
       }
@@ -194,9 +196,10 @@ export function useExerciseSession(
       lastTickRef.current = Date.now();
       const video = videoRef.current;
       if (video) video.currentTime = sec;
+      if (skippingIntro) runClock();
       announce(target);
     },
-    [announce, readingPrecautions, setPosition, videoRef],
+    [announce, readingPrecautions, runClock, setPosition, videoRef],
   );
 
   const stop = useCallback(() => {

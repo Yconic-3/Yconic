@@ -20,6 +20,11 @@
   --color-control: #8a816d; /* 조작 요소 테두리 (바탕 대비 3.6:1) */
   --color-warn-ink: #7c2d12;
   --color-focus: #1d4ed8;
+  --color-sand: #eee6d6; /* 번호 동그라미, 꼬리표 바탕 (장식용) */
+
+  /* 시안 B 글꼴: 본문 Noto Sans KR, 큰 제목 Work Sans, 카드 제목 Noto Serif KR */
+  --font-display: "Work Sans", "Noto Sans KR", sans-serif;
+  --font-serif-kr: "Noto Serif KR", "Noto Sans KR", serif;
 }
 
 :root {
@@ -67,13 +72,13 @@ button {
     "Segoe UI",
     Roboto,
     sans-serif;
-  font-size: 19px;
-  line-height: 1.5;
+  font-size: 20px;
+  line-height: 1.55;
 }
 
 .user-root :focus-visible {
   outline: 4px solid var(--color-focus);
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
 
 /* ── 관리자 화면 (/admin) ── */
