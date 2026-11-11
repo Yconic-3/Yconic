@@ -109,7 +109,15 @@ git push -u origin feat/기능이름
 
 VS Code GitHub 확장 → Pull Requests → **Create Pull Request**.
 
-5. **리뷰 후 병합** — 한 명 이상의 승인을 받고 main에 병합한다.
+5. **자동 검사 확인** — PR을 올리면 GitHub가 타입 검사·테스트·빌드를 자동으로 돌린다 (`.github/workflows/ci.yml`).
+   PR 화면 아래쪽 Checks에 초록 체크가 떠야 병합할 수 있다. 빨간 X가 뜨면 Details를 눌러 실패한 단계를 보고 고친 뒤 다시 푸시한다.
+   올리기 전에 내 컴퓨터에서 같은 검사를 먼저 돌려 볼 수 있다.
+
+```bash
+pnpm typecheck && pnpm test && pnpm build
+```
+
+6. **리뷰 후 병합** — 한 명 이상의 승인을 받고 main에 병합한다.
 
 ## 4. 지켜야 할 것
 

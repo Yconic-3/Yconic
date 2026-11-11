@@ -27,3 +27,7 @@ Thumbs.db
 desktop.ini
 .idea/
 *.swp
+
+# Next.js 자동 생성
+next-env.d.ts
+*.tsbuildinfo
