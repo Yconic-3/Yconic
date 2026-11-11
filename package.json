@@ -11,8 +11,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "dev:admin": "turbo run dev --filter=@yconic/admin-web",
-    "dev:user": "turbo run dev --filter=@yconic/user-app"
+    "dev:web": "turbo run dev --filter=@yconic/web"
   },
   "devDependencies": {
     "turbo": "^2.11.10",
