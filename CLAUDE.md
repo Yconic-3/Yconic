@@ -19,6 +19,7 @@
 - 공통 데이터 모양·권한표·상태 전이·검사 규칙·분석 결과 형식은 `packages/shared-types`에 있다. 새 타입을 따로 만들지 말고 여기서 가져다 쓴다
 - 작업 분담과 규칙은 `docs/decisions/0001-모노레포-구조와-작업-분담.md` 참고. 자기 담당 폴더 밖은 고치지 않는다
 - **백엔드는 `apps/api`(NestJS, 포트 4000) + PostgreSQL 18(`packages/database`, Drizzle, 포트 5433)이다.** 웹앱은 기본으로 API를 쓰고, 서버 없이 볼 때는 `NEXT_PUBLIC_API_MODE=mock` (`docs/decisions/0005-데이터베이스와-API-구성.md`)
+- **사용자 AI 에이전트는 `apps/user-agent`(포트 4100)이고 Claude는 `packages/ai-common`으로 부른다.** 에이전트는 DB를 만지지 않고 API의 공개 운동만 읽으며, 화면이 할 일만 돌려준다. API 키가 없으면 꺼지고 웹앱은 규칙 기반 해석을 쓴다 (`docs/decisions/0006-사용자-AI-에이전트.md`)
 - 테이블 설명은 `docs/database.md`. 테이블을 바꾸면 `packages/database/src/schema.ts` 수정 → `pnpm db:generate`로 마이그레이션 생성 → `pnpm db:migrate`
 - 제작 작업기와 영상 저장은 아직 임시다 (API 서버 안 모듈, 모의 분석기, 서버 폴더 저장). 설계 문서의 BullMQ·S3로 바꿀 예정
 
@@ -28,6 +29,7 @@
 - 전체 테스트: `pnpm test` / 타입 검사: `pnpm typecheck`
 - 데이터베이스: `pnpm db:start`(켜기, 창을 열어 둔다) → 처음 한 번 `pnpm db:setup`(테이블+예시 데이터). 예시 데이터로 되돌리기 `pnpm db:seed`
 - API 실행: `pnpm dev:api` → http://localhost:4000/health
+- 사용자 AI 에이전트 실행: `pnpm dev:agent` → http://localhost:4100/health (AI를 켜려면 `apps/user-agent/.env`에 `ANTHROPIC_API_KEY`)
 - 웹앱 실행: `pnpm dev:web` → 사용자 화면 http://localhost:3000 , 관리자 화면 http://localhost:3000/admin
 - PR을 올리면 GitHub 자동 검사(`.github/workflows/ci.yml`)가 타입 검사·테스트·빌드를 돌린다. 푸시 전에 `pnpm typecheck && pnpm test && pnpm build`로 먼저 확인한다
 

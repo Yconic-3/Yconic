@@ -35,6 +35,13 @@ pnpm dev:api
 pnpm dev:web
 ```
 
+사용자 화면에서 자연스러운 말을 AI로 알아듣게 하려면 사용자 AI 에이전트도 켠다 (선택, `apps/user-agent/README.md`).
+켜지 않거나 API 키가 없으면 정해진 말을 규칙으로 해석한다. 에이전트 주소는 `NEXT_PUBLIC_AGENT_URL` (기본 http://localhost:4100).
+
+```bash
+pnpm dev:agent
+```
+
 http://localhost:3000 이 사용자 화면, http://localhost:3000/admin 이 관리자 화면이다.
 
 ## 데이터 소스: API 또는 모의 데이터
