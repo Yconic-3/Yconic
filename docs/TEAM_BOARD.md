@@ -12,6 +12,15 @@
 
 ---
 
+## 2026-11-11 · Yconic (사용자 앱 + 관리자 웹 → 한 웹앱)
+
+- **사용자 앱과 관리자 웹을 한 웹앱 `apps/web`으로 합쳤다.** `pnpm dev:web` 하나로 실행한다. 사용자 화면은 http://localhost:3000 , 관리자 화면은 http://localhost:3000/admin .
+- 이제 두 화면이 같은 모의 저장소를 쓴다. 관리자가 영상을 올려 공개하면 사용자 화면 목록에 바로 나온다.
+- 예시 데이터를 하나로 합쳤다: 공개 운동 4개 + 관리자 흐름 시연용 3개(검수 중·초안·수정 요청, 다른 운동으로 바꿈).
+- 코드 위치: 사용자 화면 `apps/web/src/user`, 관리자 화면 `apps/web/src/admin`, 함께 쓰는 모의 백엔드 `apps/web/src/mock`. 서로의 화면 코드는 가져다 쓰지 않는다.
+- `pnpm dev:admin`, `pnpm dev:user`는 없어졌다. 예전 브랜치에서 작업 중이면 main을 받은 뒤 위 경로로 옮겨 주세요.
+- 결정 기록: `docs/decisions/0004-한-웹앱으로-합치기.md`
+
 ## 2026-11-10 · Yconic (사용자 앱 1차)
 
 - 사용자 앱(`apps/user-app`)을 추가했다. `pnpm dev:user`로 실행하면 백엔드 없이 돌아간다 (http://localhost:3000). 자세한 내용은 `apps/user-app/README.md`.

@@ -12,6 +12,7 @@
 ## 현재 상태
 
 - pnpm + Turborepo 모노레포. `apps/`, `packages/` 구조는 설계 문서 2장을 따른다
+- **사용자 앱과 관리자 웹은 한 웹앱 `apps/web`이다.** 사용자 화면은 `/`(`src/user`), 관리자 화면은 `/admin`(`src/admin`), 둘이 함께 쓰는 모의 백엔드는 `src/mock` (`docs/decisions/0004-한-웹앱으로-합치기.md`). 두 영역은 서로의 화면 코드를 가져다 쓰지 않는다
 - **운동 콘텐츠의 본체는 영상이다.** 콘텐츠 = 영상 + 영상 타임라인 위의 구간별 음성 안내. 글 묶음이 아니다 (`docs/decisions/0002-영상-중심-콘텐츠-모델.md`)
 - **일반 사용자와 시각장애인 사용자가 함께 이용한다.** 그래서 음성 안내가 없는 구간이 있어도 공개할 수 있다 (경고만 한다)
 - **자기 승인 금지**: 콘텐츠를 만든 사람과 검수를 요청한 사람은 그 콘텐츠를 승인할 수 없다. 역할과 상관없이 적용 (`docs/decisions/0003-자기-승인-금지.md`)
@@ -23,8 +24,7 @@
 
 - 설치: `pnpm install`
 - 전체 테스트: `pnpm test` / 타입 검사: `pnpm typecheck`
-- 관리자 웹 실행: `pnpm dev:admin` (http://localhost:3001)
-- 사용자 앱 실행: `pnpm dev:user` (http://localhost:3000)
+- 웹앱 실행: `pnpm dev:web` → 사용자 화면 http://localhost:3000 , 관리자 화면 http://localhost:3000/admin
 - PR을 올리면 GitHub 자동 검사(`.github/workflows/ci.yml`)가 타입 검사·테스트·빌드를 돌린다. 푸시 전에 `pnpm typecheck && pnpm test && pnpm build`로 먼저 확인한다
 
 ## 작업 규칙
