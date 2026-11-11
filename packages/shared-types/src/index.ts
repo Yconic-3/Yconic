@@ -7,3 +7,5 @@ export * from "./audit";
 export * from "./validation";
 export * from "./analysis";
 export * from "./admin-api";
+export * from "./user-api";
+export * from "./auth";

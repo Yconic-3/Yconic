@@ -1,20 +1,7 @@
-import type { ExerciseCategory, ExerciseContent, Id } from "@yconic/shared-types";
+import { matchesExerciseFilter, type ExerciseListFilter, type Id, type PublishedExercise } from "@yconic/shared-types";
 
-/**
- * 사용자에게 보여 줄 수 있는 콘텐츠 항목만 고른 모양.
- * 새 타입이 아니라 공통 타입 ExerciseContent에서 필요한 칸만 뽑은 것이다.
- * 관리자 내부 메모·검수 의견·작성자 같은 칸은 사용자 앱으로 넘어오지 않는다.
- */
-export type PublishedExercise = Pick<
-  ExerciseContent,
-  "id" | "title" | "summary" | "category" | "difficulty" | "tags" | "precautions" | "video" | "segments"
->;
-
-export interface ExerciseListFilter {
-  category?: ExerciseCategory;
-  /** 제목·요약·태그에서 찾을 말 */
-  keyword?: string;
-}
+// 사용자에게 보여 줄 칸과 거르기 규칙은 공통 타입에 있다 (서버와 같은 규칙).
+export { toPublishedExercise, type ExerciseListFilter, type PublishedExercise } from "@yconic/shared-types";
 
 /**
  * 사용자 앱이 사용하는 데이터 접근 인터페이스.
@@ -43,28 +30,5 @@ export function errorMessage(e: unknown): string {
   return "알 수 없는 오류가 발생했습니다.";
 }
 
-/** 콘텐츠에서 사용자에게 보여 줄 칸만 남긴다. */
-export function toPublishedExercise(c: ExerciseContent): PublishedExercise {
-  return {
-    id: c.id,
-    title: c.title,
-    summary: c.summary,
-    category: c.category,
-    difficulty: c.difficulty,
-    tags: [...c.tags],
-    precautions: [...c.precautions],
-    video: { ...c.video },
-    segments: c.segments.map((s) => ({ ...s, tts: { ...s.tts } })),
-  };
-}
-
-export function matchesFilter(e: PublishedExercise, filter: ExerciseListFilter | undefined): boolean {
-  if (!filter) return true;
-  if (filter.category && e.category !== filter.category) return false;
-  const keyword = filter.keyword?.replace(/\s+/g, "");
-  if (keyword) {
-    const haystack = [e.title, e.summary, ...e.tags].join(" ").replace(/\s+/g, "");
-    if (!haystack.includes(keyword)) return false;
-  }
-  return true;
-}
+/** 이전 이름. 공통 타입의 matchesExerciseFilter와 같다. */
+export const matchesFilter = matchesExerciseFilter;

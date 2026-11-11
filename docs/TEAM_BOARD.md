@@ -12,6 +12,15 @@
 
 ---
 
+## 2026-11-11 · Yconic (데이터베이스와 API — 이제 웹앱이 서버 데이터를 쓴다)
+
+- **PostgreSQL 18 + NestJS API를 붙였다.** 사용자 화면·관리자 화면·로그인이 모두 API를 쓴다. 결정 기록: `docs/decisions/0005-데이터베이스와-API-구성.md`
+- **실행 순서가 바뀌었다**: `pnpm install` → `pnpm db:start`(창 열어 두기) → 처음 한 번 `pnpm db:setup` → `pnpm dev:api` → `pnpm dev:web`. Docker는 필요 없다.
+- 서버 없이 화면만 보려면 `apps/web/.env.local`에 `NEXT_PUBLIC_API_MODE=mock`.
+- 테이블 설명은 `docs/database.md`, API 주소는 `apps/api/README.md`와 `packages/shared-types`의 `admin-api.ts`, `user-api.ts`, `auth.ts`.
+- **임시인 것**: 제작 작업기는 API 서버 안에서 모의 분석기로 돈다. 올린 영상은 `apps/api/storage`에 저장된다 (S3로 옮길 예정).
+- **CI**: PR 검사에 API 테스트가 추가됐다 (PostgreSQL 서비스 컨테이너 사용).
+
 ## 2026-11-11 · Yconic (로그인, 관리자 페이지 연결, 운동별 영상 페이지)
 
 - **로그인**: 처음 화면 오른쪽 위 "로그인" → `/login`. 사용자 화면과 관리자 화면이 같은 로그인을 쓴다. 예전 관리자 역할 선택 화면은 없어졌다 (`/admin/login`은 `/login`으로 넘어간다).

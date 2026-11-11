@@ -11,10 +11,26 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "dev:web": "turbo run dev --filter=@yconic/web"
+    "dev:web": "turbo run dev --filter=@yconic/web",
+    "dev:api": "turbo run dev --filter=@yconic/api",
+    "db:start": "pnpm --filter @yconic/database db:start",
+    "db:generate": "pnpm --filter @yconic/database db:generate",
+    "db:migrate": "pnpm --filter @yconic/database db:migrate",
+    "db:seed": "pnpm --filter @yconic/database db:seed",
+    "db:setup": "pnpm --filter @yconic/database db:setup"
   },
   "devDependencies": {
     "turbo": "^2.11.10",
     "typescript": "~5.9.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@embedded-postgres/darwin-arm64",
+      "@embedded-postgres/darwin-x64",
+      "@embedded-postgres/linux-arm64",
+      "@embedded-postgres/linux-x64",
+      "@embedded-postgres/windows-x64",
+      "esbuild"
+    ]
   }
 }

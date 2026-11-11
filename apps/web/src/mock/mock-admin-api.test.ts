@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AdminUser, ExerciseContent } from "@yconic/shared-types";
 import { AdminApiError } from "@/admin/lib/api/admin-api";
 import { createMockAdminApi } from "./mock-admin-api";
-import { planSegmentsByDuration } from "./mock-analyzer";
+import { planSegmentsByDuration } from "@yconic/content-analysis";
 import { MOCK_USERS } from "./seed";
 import { createMemoryMockStorage } from "./storage";
 import { createMemoryVideoStore } from "./video-store";

@@ -3,17 +3,40 @@
   "ui": "stream",
   "tasks": {
     "build": {
-      "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [
+        ".next/**",
+        "!.next/cache/**",
+        "dist/**"
+      ]
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "passThroughEnv": [
+        "DATABASE_URL",
+        "PORT",
+        "WEB_ORIGIN",
+        "API_PUBLIC_URL",
+        "STORAGE_DIR",
+        "JOB_STAGE_MS",
+        "TTS_MS",
+        "YCONIC_DB_PORT",
+        "YCONIC_PGDATA"
+      ]
     },
     "lint": {},
     "typecheck": {
-      "dependsOn": ["^typecheck"]
+      "dependsOn": [
+        "^typecheck"
+      ]
     },
-    "test": {}
+    "test": {
+      "passThroughEnv": [
+        "TEST_DATABASE_URL"
+      ]
+    }
   }
 }

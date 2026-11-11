@@ -1,12 +1,18 @@
 import type { AdminApiErrorBody, PlaybackUrlResponse, VideoAsset } from "@yconic/shared-types";
+import { API_UNREACHABLE_MESSAGE } from "@/lib/api-mode";
+import type { VideoMetadata } from "../video";
 import { AdminApiError, type AdminApi } from "./admin-api";
 
 /**
- * 백엔드(apps/api)가 준비되면 사용하는 HTTP 구현.
+ * 백엔드(apps/api) HTTP 구현.
  * 엔드포인트는 @yconic/shared-types 의 admin-api.ts 주석에 정리되어 있다.
- * 인증 방식이 정해지면 getToken 으로 토큰을 넣는다.
+ * 모든 요청에 로그인 토큰(getToken)을 Authorization 헤더로 붙인다.
  */
-export function createHttpAdminApi(baseUrl: string, getToken: () => string | null = () => null): AdminApi {
+export function createHttpAdminApi(
+  baseUrl: string,
+  getToken: () => string | null,
+  readVideoMetadata: (file: Blob) => Promise<VideoMetadata>,
+): AdminApi {
   function authHeaders(): Record<string, string> {
     const token = getToken();
     return token ? { Authorization: `Bearer ${token}` } : {};
@@ -18,11 +24,16 @@ export function createHttpAdminApi(baseUrl: string, getToken: () => string | nul
   }
 
   async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await fetch(`${baseUrl}${path}`, {
-      method,
-      headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${baseUrl}${path}`, {
+        method,
+        headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...authHeaders() },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    } catch {
+      throw new AdminApiError("UNKNOWN", API_UNREACHABLE_MESSAGE);
+    }
     if (!res.ok) throw await parseError(res);
     if (res.status === 204) return undefined as T;
     return (await res.json()) as T;
@@ -36,8 +47,16 @@ export function createHttpAdminApi(baseUrl: string, getToken: () => string | nul
   };
 
   return {
-    uploadVideo: (file, onProgress) =>
-      new Promise<VideoAsset>((resolve, reject) => {
+    uploadVideo: async (file, onProgress) => {
+      // 영상 길이와 크기는 브라우저가 파일에서 읽어 함께 보낸다 (서버는 아직 영상을 열어 보지 않는다).
+      let meta: VideoMetadata;
+      try {
+        meta = await readVideoMetadata(file);
+      } catch (e) {
+        throw new AdminApiError("VALIDATION", e instanceof Error ? e.message : "영상 정보를 읽을 수 없습니다.");
+      }
+      if (!(meta.durationSec > 0)) throw new AdminApiError("VALIDATION", "영상 길이를 읽을 수 없습니다. 다른 파일로 시도해 주세요.");
+      return new Promise<VideoAsset>((resolve, reject) => {
         // fetch는 업로드 진행률을 주지 않으므로 XMLHttpRequest를 쓴다.
         const xhr = new XMLHttpRequest();
         xhr.open("POST", `${baseUrl}/admin/videos`);
@@ -60,9 +79,14 @@ export function createHttpAdminApi(baseUrl: string, getToken: () => string | nul
         };
         xhr.onerror = () => reject(new AdminApiError("UNKNOWN", "업로드 중 네트워크 오류가 발생했습니다."));
         const form = new FormData();
+        form.append("durationSec", String(meta.durationSec));
+        form.append("width", String(meta.width));
+        form.append("height", String(meta.height));
+        // 파일은 마지막에 넣는다 (서버가 앞의 칸을 먼저 읽는다)
         form.append("file", file);
         xhr.send(form);
-      }),
+      });
+    },
     getVideoPlaybackUrl: async (videoId) =>
       (await request<PlaybackUrlResponse>("GET", `/admin/videos/${encodeURIComponent(videoId)}/playback-url`)).url,
     deleteVideo: (videoId) => request("DELETE", `/admin/videos/${encodeURIComponent(videoId)}`),

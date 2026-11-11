@@ -10,6 +10,16 @@
         "dev"
       ],
       "port": 3000
+    },
+    {
+      "name": "api",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@yconic/api",
+        "dev"
+      ],
+      "port": 4000
     }
   ]
 }

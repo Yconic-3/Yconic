@@ -3,7 +3,7 @@
 import type { AdminUser } from "@yconic/shared-types";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createAdminApi, getApiMode, type AdminApi, type ApiMode } from "./api";
-import { adminUserOf, readSignedInAccount, signOut, type SignedInAccount } from "@/mock/auth";
+import { adminUserOf, readSignedInAccount, signOut, verifySession, type SignedInAccount } from "@/lib/auth";
 import { resetMockStorage } from "@/mock/storage";
 import { createIndexedDbVideoStore } from "@/mock/video-store";
 
@@ -25,7 +25,7 @@ const SessionContext = createContext<SessionValue | null>(null);
 
 /**
  * 관리자 화면의 로그인 상태.
- * 로그인은 사용자 화면과 같은 /login 페이지에서 한다 (src/mock/auth.ts).
+ * 로그인은 사용자 화면과 같은 /login 페이지에서 한다 (src/lib/auth.ts).
  */
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [account, setAccount] = useState<SignedInAccount | null>(null);
@@ -39,8 +39,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const api = useMemo(() => createAdminApi(() => userRef.current), [apiKey]);
 
   useEffect(() => {
+    let alive = true;
     setAccount(readSignedInAccount());
-    setReady(true);
+    // 서버에 로그인이 아직 유효한지 확인한 뒤에 화면을 연다 (만료된 로그인으로 들어가지 않게).
+    void verifySession().then((a) => {
+      if (!alive) return;
+      setAccount(a);
+      setReady(true);
+    });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const logout = useCallback(() => {

@@ -18,7 +18,7 @@ import {
   type VideoAsset,
 } from "@yconic/shared-types";
 import { AdminApiError, type AdminApi } from "@/admin/lib/api/admin-api";
-import { createMockAnalyzer, type VideoAnalyzer } from "./mock-analyzer";
+import { createMockAnalyzer, type VideoAnalyzer } from "@yconic/content-analysis";
 import { createSeedState, type MockJob, type MockState } from "./seed";
 import type { VideoStore } from "./video-store";
 

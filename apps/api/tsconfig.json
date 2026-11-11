@@ -1,0 +1,9 @@
+{
+  "extends": "@yconic/config/tsconfig.base.json",
+  "compilerOptions": {
+    // NestJS는 예전 방식 데코레이터를 쓴다. 의존성은 @Inject(토큰)으로 직접 적어서 emitDecoratorMetadata 없이 동작한다.
+    "experimentalDecorators": true,
+    "types": ["node"]
+  },
+  "include": ["src", "test"]
+}
