@@ -20,6 +20,16 @@
         "dev"
       ],
       "port": 4000
+    },
+    {
+      "name": "agent",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@yconic/user-agent",
+        "dev"
+      ],
+      "port": 4100
     }
   ]
 }
