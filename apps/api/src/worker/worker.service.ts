@@ -117,6 +117,7 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
       title: s.title,
       instruction: s.instruction,
       voiceGuide: s.voiceGuide,
+      conciseGuide: s.conciseGuide,
       repetitions: s.repetitions,
       // content-worker가 구간별 음성까지 만든다 (모의 음성 주소)
       ttsStatus: "READY",

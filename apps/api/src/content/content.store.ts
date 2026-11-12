@@ -42,6 +42,7 @@ export function toSegment(s: SegmentRow): ExerciseSegment {
     title: s.title,
     instruction: s.instruction,
     voiceGuide: s.voiceGuide,
+    conciseGuide: s.conciseGuide,
     repetitions: s.repetitions,
     tts: { status: s.ttsStatus, audioUrl: s.ttsAudioUrl, generatedForText: s.ttsGeneratedForText, failureReason: s.ttsFailureReason },
   };

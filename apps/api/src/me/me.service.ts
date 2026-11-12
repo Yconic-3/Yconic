@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { contentJobs, contents, segments, videos, type Database } from "@yconic/database";
+import { accountCourses, contentJobs, contents, segments, videos, type Database } from "@yconic/database";
 import {
   canCreatorEdit,
   CONTENT_STATUS_LABELS,
@@ -8,7 +8,9 @@ import {
   type AuthAccount,
   type ContentJob,
   type CreateContentJobInput,
+  type CourseId,
   type MyContent,
+  type MyCourses,
   type SubmitMyContentInput,
   type UpdateMyGuidesInput,
   type VideoAsset,
@@ -39,6 +41,21 @@ export class MeService {
     @Inject(DB) private readonly db: Database,
     @Inject(CONFIG) private readonly config: ApiConfig,
   ) {}
+
+  // ── 내 강의 ──
+
+  async getCourses(account: AuthAccount): Promise<MyCourses> {
+    const rows = await this.db.select({ courseId: accountCourses.courseId }).from(accountCourses).where(eq(accountCourses.accountId, account.id));
+    return { courseIds: rows.map((r) => r.courseId as CourseId) };
+  }
+
+  async setCourses(account: AuthAccount, input: MyCourses): Promise<MyCourses> {
+    await this.db.transaction(async (tx) => {
+      await tx.delete(accountCourses).where(eq(accountCourses.accountId, account.id));
+      if (input.courseIds.length) await tx.insert(accountCourses).values(input.courseIds.map((courseId) => ({ accountId: account.id, courseId })));
+    });
+    return this.getCourses(account);
+  }
 
   // ── 영상 ──
 

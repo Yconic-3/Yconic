@@ -3,11 +3,13 @@ import {
   CONTENT_STATUSES,
   DIFFICULTIES,
   EXERCISE_CATEGORIES,
+  LEARNED_COURSE_IDS,
   SEGMENT_KINDS,
   type ChangeContentStatusInput,
   type ContentListFilter,
   type CreateContentJobInput,
   type ExerciseSegment,
+  type MyCourses,
   type ReanalyzeContentInput,
   type ReplaceContentVideoInput,
   type RequestTtsInput,
@@ -73,6 +75,7 @@ function segment(v: unknown, i: number): SegmentInput {
     title: str(s.title, `${label} 제목`, { max: 200 }),
     instruction: str(s.instruction ?? "", `${label} 동작 설명`, { max: 2000 }),
     voiceGuide: str(s.voiceGuide, `${label} 음성 안내문`, { max: 2000 }),
+    conciseGuide: str(s.conciseGuide ?? "", `${label} 짧은 안내문`, { max: 1000 }),
     repetitions: s.repetitions === null || s.repetitions === undefined ? null : int(s.repetitions, `${label} 반복 횟수`),
   };
 }
@@ -163,6 +166,12 @@ export function parseUpdateMyGuides(body: unknown): UpdateMyGuidesInput {
       return { id: str(o.id, `${i + 1}단계 id`, { max: 100 }), voiceGuide: str(o.voiceGuide, `${i + 1}단계 음성 안내`, { max: 2000 }) };
     }),
   };
+}
+
+export function parseMyCourses(body: unknown): MyCourses {
+  const b = obj(body);
+  if (!Array.isArray(b.courseIds)) fail("courseIds는 목록이어야 합니다.");
+  return { courseIds: [...new Set(b.courseIds.map((c) => oneOf(c, LEARNED_COURSE_IDS, "강의")))] };
 }
 
 export function parseSubmitMy(body: unknown): SubmitMyContentInput {

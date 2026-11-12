@@ -4,15 +4,24 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
 import {
+  courseLabel,
+  courseOfExercise,
   DIFFICULTY_LABELS,
   EXERCISE_CATEGORY_LABELS,
+  guideLevelFor,
+  guideLevelLabel,
+  guideTextOf,
   type AgentAction,
   type AgentChatResponse,
   type AgentTurn,
+  type CourseId,
+  type ExerciseSegment,
 } from "@yconic/shared-types";
 import { readSignedInAccount, signOut, type SignedInAccount } from "@/lib/auth";
 import { createDefaultAgentClient, handleLocally, splitAgentActions } from "@/user/lib/agent";
 import { createUserApi, errorMessage, type PublishedExercise } from "@/user/lib/api";
+import { createCoursesApi } from "@/user/lib/courses-api";
+import { eulReul, ieyo } from "@/user/lib/korean";
 import { matchesFilter } from "@/user/lib/api/user-api";
 import { parseIntent, type Intent } from "@/user/lib/intent";
 import { goBack, goHome, INITIAL_NAV, navigate, type NavState, type View } from "@/user/lib/navigation";
@@ -117,6 +126,33 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
   const refreshAccount = useCallback(() => setAccount(readSignedInAccount()), []);
   useEffect(refreshAccount, [pathname, refreshAccount]);
 
+  // 내 강의: 로그인하면 불러온다. 로그인하지 않았으면 null (모든 동작을 자세하게 안내)
+  const coursesApi = useMemo(() => createCoursesApi(), []);
+  const [learned, setLearned] = useState<CourseId[] | null>(null);
+  const accountId = account?.id ?? null;
+  useEffect(() => {
+    if (!accountId) {
+      setLearned(null);
+      return;
+    }
+    let cancelled = false;
+    coursesApi
+      .get()
+      .then((ids) => !cancelled && setLearned(ids))
+      .catch(() => !cancelled && setLearned([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId, coursesApi]);
+  const setLearnedCourses = useCallback(
+    async (ids: CourseId[]) => {
+      setLearned(await coursesApi.set(ids));
+    },
+    [coursesApi],
+  );
+  /** 이 운동을 짧게 안내할지 자세하게 안내할지 */
+  const levelOf = useCallback((e: Pick<PublishedExercise, "category" | "tags">) => guideLevelFor(e, accountId ? (learned ?? []) : null), [accountId, learned]);
+
   const [exercises, setExercises] = useState<PublishedExercise[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [nav, setNav] = useState<NavState>(INITIAL_NAV);
@@ -217,9 +253,13 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     [addMessage],
   );
 
-  const session = useExerciseSession(exercise, videoRef, say);
+  const exerciseLevel = exercise ? levelOf(exercise) : "detailed";
+  const guideOf = useCallback((s: ExerciseSegment) => guideTextOf(s, exerciseLevel), [exerciseLevel]);
+  const session = useExerciseSession(exercise, videoRef, say, guideOf);
   const sessionRef = useRef(session);
   sessionRef.current = session;
+  const levelRef = useRef(exerciseLevel);
+  levelRef.current = exerciseLevel;
 
   // 운동을 고르면 영상 주소를 받아 오고, "○○ 시작"으로 들어왔으면 바로 시작한다.
   useEffect(() => {
@@ -240,8 +280,20 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     quietIntroRef.current = false;
     const timer = window.setTimeout(() => {
       if (cancelled) return;
-      if (autoplay) sessionRef.current.start();
-      else if (!quiet) void say(`${exercise.title}을 준비할게요. ${exercise.summary} "시작"이라고 말하면 1단계부터 안내합니다.`);
+      if (quiet) {
+        if (autoplay) sessionRef.current.start();
+        return;
+      }
+      // 왜 짧게/자세하게 안내하는지 먼저 알린다 (내 강의)
+      const course = courseOfExercise(exercise);
+      const why =
+        levelRef.current === "concise" && course
+          ? `${courseLabel(course)} 강의를 들으셨으니 배운 용어로 짧게 안내할게요.`
+          : "처음 하는 동작이라 자세와 방향까지 자세히 안내할게요.";
+      void say(`${eulReul(exercise.title)} 준비할게요. ${why}${autoplay ? " 바로 시작합니다." : ' "시작"이라고 말하면 1단계부터 안내합니다.'}`).then((finished) => {
+        // 안내를 다 읽기 전에 사용자가 다른 말을 했으면 바로 시작하지 않는다
+        if (!cancelled && autoplay && finished) sessionRef.current.start();
+      });
     }, 50);
     return () => {
       cancelled = true;
@@ -439,9 +491,25 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
         case "NEW_CONTENT":
           goTo("/my/contents/new", "새 콘텐츠 만들기입니다. 운동 영상 파일을 고르고 분석 시작이라고 말해 주세요.");
           return;
-        case "COURSES":
-          goTo("/courses", "내 강의 화면입니다. 강사에게 배운 강의를 고르면 그 동작은 짧게 안내합니다.");
+        case "COURSES": {
+          if (!intent.courseId || !readSignedInAccount()) {
+            goTo("/courses", "내 강의 화면입니다. 강사에게 배운 강의를 고르면 그 동작은 짧게 안내합니다.");
+            return;
+          }
+          const id = intent.courseId;
+          const current = learned ?? [];
+          const next = intent.learned ? [...new Set([...current, id])] : current.filter((c) => c !== id);
+          void setLearnedCourses(next)
+            .then(() =>
+              say(
+                intent.learned
+                  ? `${courseLabel(id)} 강의를 수강한 것으로 기록했어요. 그 동작들은 짧게 안내할게요.`
+                  : `${courseLabel(id)} 강의를 수강 목록에서 뺐어요. 그 동작들은 자세하게 안내할게요.`,
+              ),
+            )
+            .catch((e: unknown) => say(`내 강의를 저장하지 못했어요. ${e instanceof Error ? e.message : ""}`));
           return;
+        }
         case "LIST": {
           const target: View = { name: "list", category: intent.category, keyword: intent.keyword };
           const found = all.filter((e) => matchesFilter(e, { category: intent.category ?? undefined, keyword: intent.keyword ?? undefined }));
@@ -459,7 +527,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
         case "OPEN":
           if (exercise?.id === intent.exerciseId) {
             if (intent.autoplay) s.start();
-            else void say(`${exercise.title}이에요. "시작"이라고 말하면 안내를 시작합니다.`);
+            else void say(`${ieyo(exercise.title)}. "시작"이라고 말하면 안내를 시작합니다.`);
           } else {
             openExercise(intent.exerciseId, intent.autoplay);
           }
@@ -504,7 +572,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           return;
       }
     },
-    [changeRate, exercise, exercises, goTo, handleBack, handleHome, handleLogout, mode, openExercise, pathname, router, say, setTts, toggleTtsPause],
+    [changeRate, exercise, exercises, goTo, handleBack, handleHome, handleLogout, learned, mode, openExercise, pathname, router, say, setLearnedCourses, setTts, toggleTtsPause],
   );
 
   /** 에이전트가 돌려준 할 일 하나를 말 없이 실행한다. 말은 에이전트의 답이 대신한다 */
@@ -680,13 +748,15 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     () => ({
       account,
       refreshAccount,
+      learnedCourses: accountId ? learned : null,
+      setLearnedCourses,
       say,
       setPage,
       setPageCommands: (handler) => {
         pageCommandsRef.current = handler;
       },
     }),
-    [account, refreshAccount, say],
+    [account, accountId, learned, refreshAccount, say, setLearnedCourses],
   );
 
   // ── 화면에 쓸 값 ──
@@ -726,10 +796,10 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           { label: "운동 목록 열기", sub: `전체 운동 ${exercises?.length ?? 0}개`, icon: ICONS.list, path: "", go: showAllExercises },
           {
             label: "내 강의 바꾸기",
-            sub: account ? "강사에게 배운 강의는 짧게 안내합니다" : "로그인 필요",
+            sub: account ? `현재: ${learned?.length ? learned.map(courseLabel).join(", ") : "등록 없음"}` : "로그인 필요",
             icon: ICONS.book,
             path: "/courses",
-            go: () => runIntent({ type: "COURSES" }),
+            go: () => runIntent({ type: "COURSES", courseId: null, learned: true }),
           },
           { label: "콘텐츠 올리기로 바꾸기", sub: "운동 영상을 올리는 분을 위한 화면", icon: ICONS.swap, path: "", strong: true, go: () => runIntent({ type: "SUPPLY" }) },
         ];
@@ -851,7 +921,9 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
                   <h2 id="control-title" className="m-0 text-[26px] font-extrabold">
                     {exercise.title} · {session.segmentIndex + 1}/{exercise.segments.length}단계 {currentSegment?.title ?? ""}
                   </h2>
-                  <p className="m-0 text-[18px] text-ink-2">지금 상태: {session.playing ? "안내 중" : SESSION_STATE_LABELS[session.state]}</p>
+                  <p className="m-0 text-[18px] text-ink-2">
+                    {guideLevelLabel(exerciseLevel)} 안내 · 지금 상태: {session.playing ? "안내 중" : SESSION_STATE_LABELS[session.state]}
+                  </p>
                   <Button tone="primary" size="xl" icon={session.playing ? ICONS.pause : ICONS.play} onClick={togglePlay} className="!min-h-[84px] !text-[28px]">
                     {session.playing ? "멈춤" : session.started && session.state === "PAUSED" ? "계속" : "시작"}
                   </Button>
@@ -877,7 +949,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
                             icon={current ? ICONS.speaker : ICONS.dot}
                             title={`${i + 1}단계. ${seg.title}`}
                             mark={current ? " (지금)" : ""}
-                            sub={seg.voiceGuide || "이 단계에는 음성 안내가 없어요."}
+                            sub={guideOf(seg) || "이 단계에는 음성 안내가 없어요."}
                             current={current}
                             currentKind="step"
                             onClick={() => session.goToSegment(i)}
@@ -932,7 +1004,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
                           <ListButton
                             icon={ICONS.exercise}
                             title={e.title}
-                            sub={`${EXERCISE_CATEGORY_LABELS[e.category]}, ${formatDuration(e.video.durationSec)}, ${DIFFICULTY_LABELS[e.difficulty]}`}
+                            sub={`${EXERCISE_CATEGORY_LABELS[e.category]}, ${formatDuration(e.video.durationSec)}, ${DIFFICULTY_LABELS[e.difficulty]}, ${guideLevelLabel(levelOf(e))} 안내`}
                             onClick={() => {
                               addMessage("me", `${e.title} 시작`);
                               setLastHeard(`${e.title} 시작`);

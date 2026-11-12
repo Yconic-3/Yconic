@@ -99,6 +99,14 @@ describe("parseIntent — 앱 전체 명령 (시안 D)", () => {
     expect(parse("내 콘텐츠 보여줘")).toEqual({ type: "SUPPLY" });
     expect(parse("새 콘텐츠 만들래")).toEqual({ type: "NEW_CONTENT" });
     expect(parse("운동하기로 바꿔줘")).toEqual({ type: "CONSUME" });
-    expect(parse("내 강의")).toEqual({ type: "COURSES" });
+    expect(parse("내 강의")).toEqual({ type: "COURSES", courseId: null, learned: true });
+  });
+
+  it("강의를 말하면 배웠다고 기록하고, '안'이 있으면 뺀다", () => {
+    expect(parse("하체 강의 들었어")).toEqual({ type: "COURSES", courseId: "lower", learned: true });
+    expect(parse("요가 수강했어")).toEqual({ type: "COURSES", courseId: "stretch", learned: true });
+    expect(parse("코어 강의는 안 들었어")).toEqual({ type: "COURSES", courseId: "core", learned: false });
+    // 강의라는 말이 없으면 운동 찾기다
+    expect(parse("하체 운동 찾아줘")).toEqual({ type: "LIST", category: null, keyword: "하체" });
   });
 });

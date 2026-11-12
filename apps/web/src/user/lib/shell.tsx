@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef } from "react";
+import type { CourseId } from "@yconic/shared-types";
 import type { SignedInAccount } from "@/lib/auth";
 
 /**
@@ -27,6 +28,10 @@ export interface ShellApi {
   account: SignedInAccount | null;
   /** 로그인·로그아웃 뒤 계정을 다시 읽는다 */
   refreshAccount(): void;
+  /** 내 강의. 로그인하지 않았으면 null */
+  learnedCourses: CourseId[] | null;
+  /** 내 강의를 바꾼다 (저장까지) */
+  setLearnedCourses(courseIds: CourseId[]): Promise<void>;
   /** '방금 안내'에 남기고 소리 내어 읽는다. 끝까지 읽으면 true */
   say(text: string, audioUrl?: string | null): Promise<boolean>;
   setPage(info: PageInfo | null): void;

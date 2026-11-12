@@ -177,6 +177,7 @@ export class AdminService {
       title: s.title,
       instruction: s.instruction,
       voiceGuide: s.voiceGuide,
+      conciseGuide: s.conciseGuide ?? "",
       repetitions: s.repetitions,
       ttsStatus: prev?.ttsStatus ?? "NONE",
       ttsAudioUrl: prev?.ttsAudioUrl ?? null,

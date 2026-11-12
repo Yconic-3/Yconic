@@ -111,6 +111,7 @@ export function SegmentEditor({
           title: "",
           instruction: "",
           voiceGuide: "",
+          conciseGuide: "",
           repetitions: null,
           tts: { status: "NONE", audioUrl: null, generatedForText: null, failureReason: null },
         },
@@ -263,6 +264,14 @@ export function SegmentEditor({
                     hint={`${s.voiceGuide.length}/${VOICE_GUIDE_MAX_LENGTH}자 · 읽는 데 약 ${speech}초${tooLong ? ` (구간 ${Math.round(len)}초보다 깁니다)` : ""}. 화면을 보지 않아도 이해되도록 몸의 감각과 방향으로 설명합니다.`}
                   >
                     <Textarea className={`min-h-24 ${tooLong ? "border-amber-400" : ""}`} value={s.voiceGuide} onChange={(e) => update(i, { voiceGuide: e.target.value })} disabled={!editable} />
+                  </Field>
+                </div>
+                <div className="md:col-span-2">
+                  <Field
+                    label="배운 사람용 짧은 안내 (선택)"
+                    hint="이 동작을 강사에게 배운 회원에게 읽어 주는 짧은 안내입니다 (배운 용어로). 비워 두면 위 음성 안내문을 읽습니다."
+                  >
+                    <Textarea className="min-h-16" value={s.conciseGuide ?? ""} onChange={(e) => update(i, { conciseGuide: e.target.value })} disabled={!editable} />
                   </Field>
                 </div>
               </div>

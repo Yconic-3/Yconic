@@ -99,7 +99,7 @@ export function validateExerciseContent(content: ValidatableContent): ContentIss
       if (len > 0 && speech > len) {
         warn(at("voiceGuide"), `${n}구간 안내문을 읽는 데 약 ${speech}초가 걸려 구간 길이 ${Math.round(len)}초를 넘습니다. 안내문을 줄이거나 구간을 늘려 주세요.`);
       }
-      const visual = findVisualOnlyPhrases(seg.voiceGuide);
+      const visual = [...new Set([...findVisualOnlyPhrases(seg.voiceGuide), ...findVisualOnlyPhrases(seg.conciseGuide ?? "")])];
       if (visual.length > 0) {
         warn(at("voiceGuide"), `${n}구간 음성 안내문에 시각 의존 표현이 있습니다: ${visual.map((v) => `"${v}"`).join(", ")}`);
       }

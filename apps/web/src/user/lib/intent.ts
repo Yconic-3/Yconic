@@ -1,4 +1,4 @@
-import { EXERCISE_CATEGORIES, EXERCISE_CATEGORY_LABELS, type ExerciseCategory, type Id } from "@yconic/shared-types";
+import { EXERCISE_CATEGORIES, EXERCISE_CATEGORY_LABELS, LEARNED_COURSES, type CourseId, type ExerciseCategory, type Id } from "@yconic/shared-types";
 
 /**
  * 사용자의 말(또는 글)을 앱이 할 일로 바꾼다.
@@ -31,8 +31,8 @@ export type Intent =
   | { type: "CONSUME" }
   | { type: "SUPPLY" }
   | { type: "NEW_CONTENT" }
-  /** 내 강의 */
-  | { type: "COURSES" }
+  /** 내 강의. 강의를 말했으면 그 강의를 배웠다(learned) 또는 빼 달라고 한 것 */
+  | { type: "COURSES"; courseId: CourseId | null; learned: boolean }
   | { type: "UNKNOWN" };
 
 export interface IntentExercise {
@@ -52,7 +52,8 @@ const TTS_RESUME_WORDS = ["음성 이어", "이어 읽", "이어서 읽", "이�
 const NEW_CONTENT_WORDS = ["새 콘텐츠", "영상 올리", "콘텐츠 만들"];
 const SUPPLY_WORDS = ["콘텐츠 올리기", "내 콘텐츠", "올린 콘텐츠"];
 const CONSUME_WORDS = ["운동하기"];
-const COURSES_WORDS = ["내 강의", "강의"];
+const COURSES_WORDS = ["내 강의", "강의", "배웠", "수강"];
+const NOT_WORDS = ["안 ", "않", "없", "빼"];
 const HOME_WORDS = ["홈", "처음으로", "첫 화면"];
 const BACK_WORDS = ["이전 화면", "뒤로 가", "돌아가"];
 const LIST_WORDS = ["찾아", "검색", "추천", "목록", "뭐 있", "뭐가 있", "어떤 운동", "무슨 운동"];
@@ -128,7 +129,10 @@ export function parseIntent(raw: string, exercises: IntentExercise[]): Intent {
   if (hasAny(text, NEW_CONTENT_WORDS)) return { type: "NEW_CONTENT" };
   if (hasAny(text, SUPPLY_WORDS)) return { type: "SUPPLY" };
   if (hasAny(text, CONSUME_WORDS)) return { type: "CONSUME" };
-  if (hasAny(text, COURSES_WORDS)) return { type: "COURSES" };
+  if (hasAny(text, COURSES_WORDS)) {
+    const course = LEARNED_COURSES.find((c) => c.words.some((w) => text.includes(w)));
+    return { type: "COURSES", courseId: course?.id ?? null, learned: !hasAny(text, NOT_WORDS) };
+  }
   if (hasAny(text, HOME_WORDS)) return { type: "HOME" };
   if (hasAny(text, BACK_WORDS)) return { type: "BACK" };
   if (hasAny(text, HELP_WORDS)) return { type: "HELP" };

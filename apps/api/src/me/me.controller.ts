@@ -1,7 +1,7 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Put, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import type { AuthAccount, ContentJob, MyContent, VideoAsset } from "@yconic/shared-types";
-import { parseCreateJob, parseSubmitMy, parseUpdateMyGuides, parseVideoMeta } from "../admin/validate";
+import type { AuthAccount, ContentJob, MyContent, MyCourses, VideoAsset } from "@yconic/shared-types";
+import { parseCreateJob, parseMyCourses, parseSubmitMy, parseUpdateMyGuides, parseVideoMeta } from "../admin/validate";
 import { AuthGuard, CurrentAccount } from "../auth/guards";
 import type { UploadedVideoFile } from "../content/content.ops";
 import { MeService } from "./me.service";
@@ -11,6 +11,16 @@ import { MeService } from "./me.service";
 @UseGuards(AuthGuard)
 export class MeController {
   constructor(@Inject(MeService) private readonly me: MeService) {}
+
+  @Get("courses")
+  getCourses(@CurrentAccount() account: AuthAccount): Promise<MyCourses> {
+    return this.me.getCourses(account);
+  }
+
+  @Put("courses")
+  setCourses(@CurrentAccount() account: AuthAccount, @Body() body: unknown): Promise<MyCourses> {
+    return this.me.setCourses(account, parseMyCourses(body));
+  }
 
   @Post("videos")
   @UseInterceptors(FileInterceptor("file"))

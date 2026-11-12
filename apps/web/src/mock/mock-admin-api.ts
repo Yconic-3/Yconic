@@ -157,6 +157,7 @@ export function createMockAdminApi(opts: MockAdminApiOptions): AdminApi {
       title: s.title,
       instruction: s.instruction,
       voiceGuide: s.voiceGuide,
+      conciseGuide: s.conciseGuide,
       repetitions: s.repetitions,
       // content-worker가 구간별 음성까지 만든다 (설계 문서 7장)
       tts: { status: "READY", audioUrl: `mock://tts/${job.id}/${i + 1}`, generatedForText: s.voiceGuide, failureReason: null },

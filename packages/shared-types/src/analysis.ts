@@ -24,6 +24,8 @@ export interface DetectedSegment {
   instruction: string;
   /** 시각장애인용 음성 안내문 초안 */
   voiceGuide: string;
+  /** 동작을 배운 사람에게 읽어 줄 짧은 안내 초안 */
+  conciseGuide: string;
   repetitions: number | null;
   /** 분석기의 확신도 0~1. 낮으면 관리자가 더 꼼꼼히 봐야 한다. */
   confidence: number;

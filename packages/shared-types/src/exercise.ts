@@ -87,6 +87,11 @@ export interface ExerciseSegment {
   instruction: string;
   /** 구간이 시작될 때 읽어 주는 시각장애인용 음성 안내문. 시각 표현 없이 몸의 감각과 방향으로 설명한다. */
   voiceGuide: string;
+  /**
+   * 그 동작을 강사에게 배운 사람에게 읽어 주는 짧은 안내 (배운 용어로). 비어 있으면 voiceGuide를 쓴다.
+   * 예전 데이터에는 없을 수 있다 (docs/decisions/0007, courses.ts)
+   */
+  conciseGuide?: string;
   /** 반복 횟수. 시간 기반 동작이면 null */
   repetitions: number | null;
   tts: TtsAsset;

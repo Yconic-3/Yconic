@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import { courseLabel } from "@yconic/shared-types";
 import { safeNextPath, signOut } from "@/lib/auth";
 import { accountLabel, LoginForm } from "@/user/components/login-form";
 import { Button, ICONS, Section } from "@/user/components/ui";
@@ -20,7 +21,7 @@ export default function AccountPage() {
 }
 
 function Account() {
-  const { account, refreshAccount, say } = useShell();
+  const { account, refreshAccount, say, learnedCourses } = useShell();
   const router = useRouter();
   const next = useSearchParams().get("next");
   usePage({ mode: "consume", title: account ? "내 계정" : "로그인", chips: account ? ["로그아웃", "운동하기"] : ["운동하기", "도움말"] });
@@ -62,6 +63,10 @@ function Account() {
         </li>
         <li>
           <span className="font-bold">구분.</span> <span className="text-ink-2">{accountLabel(account)}</span>
+        </li>
+        <li>
+          <span className="font-bold">내 강의.</span>{" "}
+          <span className="text-ink-2">{learnedCourses?.length ? learnedCourses.map(courseLabel).join(", ") : "등록 없음 (모든 동작을 자세히 안내)"}</span>
         </li>
       </ul>
       <Button

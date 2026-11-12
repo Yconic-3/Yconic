@@ -11,3 +11,4 @@ export * from "./user-api";
 export * from "./auth";
 export * from "./agent";
 export * from "./creator-api";
+export * from "./courses";

@@ -364,3 +364,20 @@ describe("회원 콘텐츠 올리기 (/me)", () => {
     expect(logs.body.some((l) => l.actorId === "u-member" && l.actorRole === null)).toBe(true);
   });
 });
+
+describe("내 강의 (/me/courses)", () => {
+  it("배운 강의를 저장하고 다시 읽는다. 모르는 강의는 400", async () => {
+    const me = await login(s.baseUrl, "member@example.com", "member1234");
+    expect((await me.get("/me/courses")).body).toEqual({ courseIds: [] });
+    const saved = await me.put("/me/courses", { courseIds: ["lower", "stretch", "lower"] });
+    expect(saved.status).toBe(200);
+    expect([...saved.body.courseIds].sort()).toEqual(["lower", "stretch"]);
+    expect((await me.put("/me/courses", { courseIds: ["요리"] })).status).toBe(400);
+    expect((await anon().get("/me/courses")).status).toBe(401);
+  });
+
+  it("공개 운동의 단계에 짧은 안내가 함께 온다", async () => {
+    const squat = (await anon().get<PublishedExercise>("/exercises/c-squat")).body;
+    expect(squat.segments[1]!.conciseGuide).toMatch(/스쿼트/);
+  });
+});
