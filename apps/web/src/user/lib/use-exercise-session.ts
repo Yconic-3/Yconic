@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import type { ExerciseSegment, ExerciseSessionState } from "@yconic/shared-types";
+import { hasNarration, type ExerciseSegment, type ExerciseSessionState } from "@yconic/shared-types";
 import type { PublishedExercise } from "./api";
+import { getSpeechState } from "./speech";
 import { clampSegmentIndex, segmentAnnouncement, segmentIndexAt, segmentStartSec, sessionEndSec, sessionStateFor } from "./player";
 
 const TICK_MS = 250;
@@ -37,7 +38,8 @@ export interface ExerciseSession {
 export function useExerciseSession(
   exercise: PublishedExercise | null,
   videoRef: RefObject<HTMLVideoElement | null>,
-  say: (text: string, audioUrl?: string | null) => Promise<boolean>,
+  /** fitSec: 이 시간 안에 다 읽도록 말 속도를 맞춘다 (영상 속도에 맞추기) */
+  say: (text: string, audioUrl?: string | null, opts?: { fitSec?: number }) => Promise<boolean>,
   /** 단계마다 읽어 줄 안내 (내 강의에 따라 짧게 또는 자세하게). 없으면 voiceGuide */
   guideOf: (segment: ExerciseSegment) => string = (s) => s.voiceGuide,
 ): ExerciseSession {
@@ -76,11 +78,17 @@ export function useExerciseSession(
     if (!ex || !segment) return;
     announcedRef.current = index;
     setSegmentIndex(index);
-    // 음성 안내가 비어 있는 구간도 공개될 수 있다. 그때는 구간 이름만 알린다.
-    // 만들어 둔 음성 파일은 자세한 안내를 읽은 것이므로, 짧은 안내를 읽을 때는 브라우저 음성으로 읽는다.
+    // 만들어 둔 음성 파일은 자세한 안내를 읽은 것이므로, 다른 안내(짧은·맞춤)를 읽을 때는 브라우저 음성으로 읽는다.
     const guide = guideOfRef.current(segment);
     const audioUrl = guide === segment.voiceGuide ? segment.tts.audioUrl : null;
-    void sayRef.current(segmentAnnouncement({ title: segment.title, voiceGuide: guide }, index, ex.segments.length), audioUrl);
+    // 강사가 말하는 영상이면 단계 이름은 붙이지 않고 맞춤 안내만, 그 단계 안에 다 읽도록 읽는다 (docs/decisions/0009).
+    // 그 시간에는 영상 소리를 끄므로 강사의 말과 겹치지 않는다. 안내가 비어 있으면 말하지 않는다.
+    // 말이 없는 영상(또는 영상 파일 없음)은 예전처럼 구간 이름과 안내를 읽는다.
+    const narrated = hasNarration(ex.segments);
+    const text = narrated ? guide.trim() : segmentAnnouncement({ title: segment.title, voiceGuide: guide }, index, ex.segments.length);
+    if (!text) return;
+    const fitSec = narrated ? Math.max(1, segment.endSec - Math.max(segment.startSec, positionRef.current)) : undefined;
+    void sayRef.current(text, audioUrl, { fitSec });
   }, []);
 
   const haltClock = useCallback(() => {
@@ -158,8 +166,15 @@ export function useExerciseSession(
       setCompleted(false);
       setStopped(false);
       setStarted(true);
+      // 음성 안내를 껐으면(일반 사용자) 원래 영상을 바로 재생한다
+      if (!getSpeechState().enabled) {
+        runClock();
+        return;
+      }
       setReadingPrecautions(true);
-      const intro = [`${ex.title}.`, ex.summary, ex.precautions.length ? `운동 전 주의사항입니다. ${ex.precautions.join(" ")}` : "", "이제 시작합니다."]
+      // 강사가 소개하는 영상이면 요약은 읽지 않는다 (영상 내용을 되풀이하지 않게)
+      const summary = hasNarration(ex.segments) ? "" : ex.summary;
+      const intro = [`${ex.title}.`, summary, ex.precautions.length ? `운동 전 주의사항입니다. ${ex.precautions.join(" ")}` : "", "이제 시작합니다."]
         .filter(Boolean)
         .join(" ");
       void sayRef.current(intro).then(() => {

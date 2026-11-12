@@ -115,6 +115,11 @@ describe("parseIntent — 앱 전체 명령 (시안 D)", () => {
     expect(parse("하체 운동 찾아줘")).toEqual({ type: "LIST", category: null, keyword: "하체" });
   });
 
+  it("부르면 듣기를 켜고 끈다", () => {
+    expect(parse("부르면 듣기 꺼줘")).toEqual({ type: "WAKE_OFF" });
+    expect(parse("호출어 켜")).toEqual({ type: "WAKE_ON" });
+  });
+
   it("동작 하나를 배웠다고 하면 내 동작에 기록하고, 모른다고 하면 뺀다", () => {
     expect(parse("스쿼트 배웠어")).toEqual({ type: "MOVEMENT", movementId: "squat", known: true });
     expect(parse("팔굽혀펴기 할 줄 알아")).toEqual({ type: "MOVEMENT", movementId: "pushup", known: true });
