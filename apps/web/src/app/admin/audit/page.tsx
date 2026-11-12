@@ -37,7 +37,7 @@ export default function AuditPage() {
                   <td className="whitespace-nowrap px-4 py-2 text-slate-600">{formatDateTime(l.createdAt)}</td>
                   <td className="whitespace-nowrap px-4 py-2">{AUDIT_ACTION_LABELS[l.action]}</td>
                   <td className="whitespace-nowrap px-4 py-2">
-                    {l.actorName} <span className="text-xs text-slate-500">({ADMIN_ROLE_LABELS[l.actorRole]})</span>
+                    {l.actorName} <span className="text-xs text-slate-500">({l.actorRole ? ADMIN_ROLE_LABELS[l.actorRole] : "회원"})</span>
                   </td>
                   <td className="whitespace-nowrap px-4 py-2">
                     {l.targetType === "CONTENT" ? (

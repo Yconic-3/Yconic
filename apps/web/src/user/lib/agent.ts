@@ -65,6 +65,20 @@ export function createDefaultAgentClient(): AgentClient {
   return getApiMode() === "http" ? createAgentClient(agentBaseUrl()) : OFF;
 }
 
+/** 계정·음성 설정·화면 종류처럼 앱 자체를 다루는 말. 길이와 상관없이 화면이 바로 처리한다 */
+const APP_COMMANDS = new Set<Intent["type"]>([
+  "ACCOUNT",
+  "LOGOUT",
+  "TTS_ON",
+  "TTS_OFF",
+  "TTS_PAUSE",
+  "TTS_RESUME",
+  "CONSUME",
+  "SUPPLY",
+  "NEW_CONTENT",
+  "COURSES",
+]);
+
 /** 어느 화면에서나 바로 처리할 짧은 조작 */
 const QUICK_ANYWHERE = new Set<Intent["type"]>(["SLOWER", "FASTER", "HOME", "BACK"]);
 /** 운동 화면에서만 바로 처리할 짧은 조작. 다른 화면의 "그거 할래"는 앞 대화를 알아야 해서 에이전트가 맡는다 */
@@ -78,7 +92,7 @@ const QUICK_MAX_CHARS = 8;
  * 나머지(찾기, 질문, 긴 말)는 에이전트가 맡는다.
  */
 export function handleLocally(intent: Intent, text: string, onExercise: boolean): boolean {
-  if (intent.type === "SAFETY") return true;
+  if (intent.type === "SAFETY" || APP_COMMANDS.has(intent.type)) return true;
   if (text.replace(/\s+/g, "").length > QUICK_MAX_CHARS) return false;
   return QUICK_ANYWHERE.has(intent.type) || (onExercise && QUICK_ON_EXERCISE.has(intent.type));
 }

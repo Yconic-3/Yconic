@@ -4,6 +4,7 @@
  */
 import {
   DIFFICULTY_LABELS,
+  type AccessibilityFinding,
   EXERCISE_CATEGORY_LABELS,
   type DetectedSegment,
   type ExerciseCategory,
@@ -23,6 +24,8 @@ interface ExerciseTemplate {
   title: string;
   instruction: string;
   voiceGuide: string;
+  /** 동작을 배운 사람에게 읽어 줄 짧은 안내 (배운 용어로) */
+  conciseGuide: string;
   repetitions: number | null;
 }
 
@@ -32,18 +35,21 @@ const TEMPLATES: Record<ExerciseCategory, ExerciseTemplate[]> = {
       title: "목 옆으로 늘리기",
       instruction: "숨을 내쉬면서 목을 오른쪽으로 천천히 기울인다.",
       voiceGuide: "숨을 천천히 들이마십니다. 내쉬면서 오른쪽 귀를 오른쪽 어깨 쪽으로 천천히 기울입니다. 목 왼쪽이 당기는 느낌이 들면 멈추고 그대로 유지합니다.",
+      conciseGuide: "오른쪽 측면 목 스트레칭, 날숨에 기울여 유지.",
       repetitions: null,
     },
     {
       title: "반대쪽 늘리기",
       instruction: "가운데로 돌아온 뒤 왼쪽으로 같은 동작을 한다.",
       voiceGuide: "머리를 천천히 가운데로 돌아오게 합니다. 이번에는 왼쪽 귀를 왼쪽 어깨 쪽으로 천천히 기울입니다. 아프면 바로 힘을 빼세요.",
+      conciseGuide: "중립 복귀 후 왼쪽 측면 목 스트레칭.",
       repetitions: null,
     },
     {
       title: "어깨 돌리기",
       instruction: "양 어깨를 뒤로 크게 돌린다.",
       voiceGuide: "두 어깨를 귀 쪽으로 올렸다가 뒤로 크게 돌려 내립니다. 천천히 다섯 번 반복합니다.",
+      conciseGuide: "어깨 후방 회전 5회.",
       repetitions: 5,
     },
   ],
@@ -52,12 +58,14 @@ const TEMPLATES: Record<ExerciseCategory, ExerciseTemplate[]> = {
       title: "무릎 굽히기",
       instruction: "엉덩이를 뒤로 빼며 무릎을 천천히 굽혔다 편다.",
       voiceGuide: "의자 등받이를 잡은 채 엉덩이를 뒤로 빼면서 무릎을 천천히 굽힙니다. 발바닥으로 바닥을 밀면서 다시 일어섭니다.",
+      conciseGuide: "의자 잡고 힙 힌지 스쿼트, 3초 하강 2초 상승.",
       repetitions: 10,
     },
     {
       title: "뒤꿈치 들기",
       instruction: "발뒤꿈치를 들어 올렸다 내린다.",
       voiceGuide: "두 발뒤꿈치를 천천히 들어 발끝으로 섭니다. 잠시 멈췄다가 천천히 내립니다.",
+      conciseGuide: "카프 레이즈, 천천히 올렸다 내리기.",
       repetitions: 10,
     },
   ],
@@ -66,12 +74,14 @@ const TEMPLATES: Record<ExerciseCategory, ExerciseTemplate[]> = {
       title: "제자리 걷기",
       instruction: "무릎을 가볍게 들어 올리며 제자리에서 걷는다.",
       voiceGuide: "제자리에서 걷기 시작합니다. 왼발, 오른발, 무릎을 가볍게 들어 올립니다. 숨이 편하게 쉬어지는 빠르기를 유지합니다.",
+      conciseGuide: "제자리 걷기, 편한 호흡 유지.",
       repetitions: null,
     },
     {
       title: "팔 흔들며 걷기",
       instruction: "팔을 앞뒤로 크게 흔들며 걷는다.",
       voiceGuide: "걸으면서 두 팔을 앞뒤로 크게 흔듭니다. 어깨에 힘을 빼고 리듬을 유지합니다.",
+      conciseGuide: "팔 스윙 걷기, 어깨 이완.",
       repetitions: null,
     },
   ],
@@ -80,12 +90,14 @@ const TEMPLATES: Record<ExerciseCategory, ExerciseTemplate[]> = {
       title: "한 발 들기",
       instruction: "오른발을 바닥에서 살짝 들어 버틴다.",
       voiceGuide: "왼발에 몸무게를 싣습니다. 오른발 뒤꿈치를 바닥에서 살짝 들어 버팁니다. 흔들리면 바로 발을 내려놓습니다.",
+      conciseGuide: "왼발 지지, 오른발 들기 버티기.",
       repetitions: 3,
     },
     {
       title: "반대 발 들기",
       instruction: "왼발로 같은 동작을 한다.",
       voiceGuide: "이번에는 오른발에 몸무게를 싣고, 왼발 뒤꿈치를 살짝 들어 버팁니다.",
+      conciseGuide: "오른발 지지, 왼발 들기 버티기.",
       repetitions: 3,
     },
   ],
@@ -94,12 +106,14 @@ const TEMPLATES: Record<ExerciseCategory, ExerciseTemplate[]> = {
       title: "발목 돌리기",
       instruction: "발목을 천천히 원을 그리며 돌린다.",
       voiceGuide: "오른쪽 발끝으로 큰 원을 그리듯 발목을 천천히 돌립니다. 바깥쪽으로 다섯 번, 안쪽으로 다섯 번 돌립니다.",
+      conciseGuide: "오른쪽 발목 회전, 바깥 5 안쪽 5.",
       repetitions: 10,
     },
     {
       title: "반대쪽 발목 돌리기",
       instruction: "왼쪽 다리로 같은 동작을 한다.",
       voiceGuide: "오른쪽 다리를 내리고 왼쪽 다리를 앞으로 폅니다. 왼쪽 발목도 바깥쪽으로 다섯 번, 안쪽으로 다섯 번 돌립니다.",
+      conciseGuide: "왼쪽 발목 회전, 바깥 5 안쪽 5.",
       repetitions: 10,
     },
   ],
@@ -111,6 +125,9 @@ const REST_GUIDE = "잠시 쉬어 갑니다. 숨을 고르고, 아프거나 어�
 const REST_GUIDE_SHORT = "잠시 쉬며 숨을 고릅니다.";
 const OUTRO_GUIDE = "운동이 끝났습니다. 어깨에 힘을 빼고 코로 크게 숨을 들이마신 뒤 입으로 천천히 내쉽니다.";
 const OUTRO_GUIDE_SHORT = "운동이 끝났습니다. 천천히 숨을 고르세요.";
+const INTRO_CONCISE = "준비 자세. 잡을 것 확인.";
+const REST_CONCISE = "휴식, 호흡 정리.";
+const OUTRO_CONCISE = "마무리 호흡.";
 
 /** 구간 길이 안에 읽을 수 있는 안내문을 고른다 (약 4글자/초) */
 function fit(lengthSec: number, full: string, short: string): string {
@@ -121,6 +138,34 @@ export const DEFAULT_PRECAUTIONS = [
   "운동 중 통증, 어지럼, 숨이 심하게 차는 느낌이 있으면 즉시 멈추고 쉬세요.",
   "넘어지지 않도록 주변에 부딪힐 물건이 없는 곳에서 하세요.",
 ];
+
+/**
+ * 분류마다 흔히 화면으로만 전달되는 정보. 모의 분석기는 영상을 보지 않으므로 분류에 맞는 예시를 돌려준다.
+ * 실제 분석기는 내레이션을 받아 적고 화면(자막, 타이머, 동작)과 비교해 찾는다.
+ */
+const FINDINGS: Record<ExerciseCategory, AccessibilityFinding[]> = {
+  STRETCHING: [
+    { kind: "동작 방향", text: "목을 기울이는 방향과 각도가 화면에만 나오고 내레이션은 \"옆으로 늘리세요\"뿐입니다." },
+    { kind: "속도·횟수", text: "자세를 유지하는 시간이 화면 타이머로만 표시됩니다." },
+  ],
+  STRENGTH: [
+    { kind: "신체 위치", text: "의자를 잡는 손의 위치와 발 간격이 음성에 없습니다." },
+    { kind: "화면 자막", text: "\"무릎이 발끝을 넘지 않게\" 자막이 읽히지 않았습니다." },
+    { kind: "속도·횟수", text: "내려갈 때와 올라올 때의 속도, 반복 횟수가 화면 숫자로만 나옵니다." },
+  ],
+  CARDIO: [
+    { kind: "동작 방향", text: "팔을 흔드는 방향과 높이가 화면에만 나옵니다." },
+    { kind: "속도·횟수", text: "걷는 빠르기가 화면의 박자 표시로만 전달됩니다." },
+  ],
+  BALANCE: [
+    { kind: "신체 위치", text: "지탱하는 손을 어디에 두는지 음성에 없습니다." },
+    { kind: "화면 자막", text: "\"흔들리면 바로 발을 내리세요\" 자막이 읽히지 않았습니다." },
+  ],
+  REHAB: [
+    { kind: "동작 방향", text: "발목을 돌리는 방향(바깥쪽, 안쪽)이 화면 화살표로만 나옵니다." },
+    { kind: "속도·횟수", text: "방향마다 돌리는 횟수가 화면 숫자로만 표시됩니다." },
+  ],
+};
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const r1 = (v: number) => Math.round(v * 10) / 10;
@@ -136,6 +181,7 @@ export function planSegmentsByDuration(durationSec: number, category: ExerciseCa
     title: t.title,
     instruction: t.instruction,
     voiceGuide: t.voiceGuide,
+    conciseGuide: t.conciseGuide,
     repetitions: t.repetitions,
     confidence,
   });
@@ -153,17 +199,17 @@ export function planSegmentsByDuration(durationSec: number, category: ExerciseCa
 
   const out: DetectedSegment[] = [];
   let t = 0;
-  out.push(seg("INTRO", 0, introLen, { title: "준비", instruction: "바르게 서서 준비한다.", voiceGuide: fit(introLen, INTRO_GUIDE, INTRO_GUIDE_SHORT), repetitions: null }, 0.8));
+  out.push(seg("INTRO", 0, introLen, { title: "준비", instruction: "바르게 서서 준비한다.", voiceGuide: fit(introLen, INTRO_GUIDE, INTRO_GUIDE_SHORT), conciseGuide: INTRO_CONCISE, repetitions: null }, 0.8));
   t = introLen;
   for (let i = 0; i < n; i++) {
     out.push(seg("EXERCISE", t, t + exLen, templates[i]!, 0.6));
     t += exLen;
     if (i < n - 1) {
-      out.push(seg("REST", t, t + restLen, { title: "휴식", instruction: "잠시 쉰다.", voiceGuide: fit(restLen, REST_GUIDE, REST_GUIDE_SHORT), repetitions: null }, 0.7));
+      out.push(seg("REST", t, t + restLen, { title: "휴식", instruction: "잠시 쉰다.", voiceGuide: fit(restLen, REST_GUIDE, REST_GUIDE_SHORT), conciseGuide: REST_CONCISE, repetitions: null }, 0.7));
       t += restLen;
     }
   }
-  out.push(seg("OUTRO", t, d, { title: "마무리", instruction: "심호흡하며 마무리한다.", voiceGuide: fit(d - t, OUTRO_GUIDE, OUTRO_GUIDE_SHORT), repetitions: null }, 0.8));
+  out.push(seg("OUTRO", t, d, { title: "마무리", instruction: "심호흡하며 마무리한다.", voiceGuide: fit(d - t, OUTRO_GUIDE, OUTRO_GUIDE_SHORT), conciseGuide: OUTRO_CONCISE, repetitions: null }, 0.8));
   return out;
 }
 
@@ -182,6 +228,7 @@ export function createMockAnalyzer(): VideoAnalyzer {
         suggestedPrecautions: [...DEFAULT_PRECAUTIONS],
         segments,
         warnings: ["모의 분석 결과입니다. 영상을 재생하면서 구간 시각과 안내문을 반드시 확인해 주세요."],
+        findings: FINDINGS[category].map((f) => ({ ...f })),
       };
     },
   };

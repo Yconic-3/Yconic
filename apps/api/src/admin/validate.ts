@@ -3,15 +3,19 @@ import {
   CONTENT_STATUSES,
   DIFFICULTIES,
   EXERCISE_CATEGORIES,
+  LEARNED_COURSE_IDS,
   SEGMENT_KINDS,
   type ChangeContentStatusInput,
   type ContentListFilter,
   type CreateContentJobInput,
   type ExerciseSegment,
+  type MyCourses,
   type ReanalyzeContentInput,
   type ReplaceContentVideoInput,
   type RequestTtsInput,
+  type SubmitMyContentInput,
   type UpdateExerciseContentInput,
+  type UpdateMyGuidesInput,
 } from "@yconic/shared-types";
 import { ApiError } from "../common/errors";
 
@@ -71,6 +75,7 @@ function segment(v: unknown, i: number): SegmentInput {
     title: str(s.title, `${label} 제목`, { max: 200 }),
     instruction: str(s.instruction ?? "", `${label} 동작 설명`, { max: 2000 }),
     voiceGuide: str(s.voiceGuide, `${label} 음성 안내문`, { max: 2000 }),
+    conciseGuide: str(s.conciseGuide ?? "", `${label} 짧은 안내문`, { max: 1000 }),
     repetitions: s.repetitions === null || s.repetitions === undefined ? null : int(s.repetitions, `${label} 반복 횟수`),
   };
 }
@@ -146,4 +151,31 @@ export function parseVideoMeta(body: Record<string, unknown>): { durationSec: nu
   const durationSec = n(body.durationSec, "영상 길이");
   if (!(durationSec > 0)) fail("영상 길이를 읽을 수 없습니다.");
   return { durationSec, width: Math.round(n(body.width ?? 0, "가로 크기")), height: Math.round(n(body.height ?? 0, "세로 크기")) };
+}
+
+// ── 회원 콘텐츠 올리기 (/me) ──
+
+export function parseUpdateMyGuides(body: unknown): UpdateMyGuidesInput {
+  const b = obj(body);
+  if (!Array.isArray(b.segments)) fail("segments는 목록이어야 합니다.");
+  if (b.segments.length > 200) fail("단계가 너무 많습니다.");
+  return {
+    expectedVersion: int(b.expectedVersion, "expectedVersion"),
+    segments: b.segments.map((s, i) => {
+      const o = obj(s, `${i + 1}단계`);
+      return { id: str(o.id, `${i + 1}단계 id`, { max: 100 }), voiceGuide: str(o.voiceGuide, `${i + 1}단계 음성 안내`, { max: 2000 }) };
+    }),
+  };
+}
+
+export function parseMyCourses(body: unknown): MyCourses {
+  const b = obj(body);
+  if (!Array.isArray(b.courseIds)) fail("courseIds는 목록이어야 합니다.");
+  return { courseIds: [...new Set(b.courseIds.map((c) => oneOf(c, LEARNED_COURSE_IDS, "강의")))] };
+}
+
+export function parseSubmitMy(body: unknown): SubmitMyContentInput {
+  const b = obj(body);
+  if (typeof b.confirmed !== "boolean") fail("confirmed는 참·거짓이어야 합니다.");
+  return { expectedVersion: int(b.expectedVersion, "expectedVersion"), confirmed: b.confirmed };
 }

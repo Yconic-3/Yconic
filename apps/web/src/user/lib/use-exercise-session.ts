@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import type { ExerciseSessionState } from "@yconic/shared-types";
+import type { ExerciseSegment, ExerciseSessionState } from "@yconic/shared-types";
 import type { PublishedExercise } from "./api";
 import { clampSegmentIndex, segmentAnnouncement, segmentIndexAt, segmentStartSec, sessionEndSec, sessionStateFor } from "./player";
 
@@ -38,6 +38,8 @@ export function useExerciseSession(
   exercise: PublishedExercise | null,
   videoRef: RefObject<HTMLVideoElement | null>,
   say: (text: string, audioUrl?: string | null) => Promise<boolean>,
+  /** 단계마다 읽어 줄 안내 (내 강의에 따라 짧게 또는 자세하게). 없으면 voiceGuide */
+  guideOf: (segment: ExerciseSegment) => string = (s) => s.voiceGuide,
 ): ExerciseSession {
   const [started, setStarted] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -52,6 +54,8 @@ export function useExerciseSession(
   exerciseRef.current = exercise;
   const sayRef = useRef(say);
   sayRef.current = say;
+  const guideOfRef = useRef(guideOf);
+  guideOfRef.current = guideOf;
   const positionRef = useRef(0);
   const announcedRef = useRef(-1);
   const playingRef = useRef(false);
@@ -73,7 +77,10 @@ export function useExerciseSession(
     announcedRef.current = index;
     setSegmentIndex(index);
     // 음성 안내가 비어 있는 구간도 공개될 수 있다. 그때는 구간 이름만 알린다.
-    void sayRef.current(segmentAnnouncement(segment, index, ex.segments.length), segment.tts.audioUrl);
+    // 만들어 둔 음성 파일은 자세한 안내를 읽은 것이므로, 짧은 안내를 읽을 때는 브라우저 음성으로 읽는다.
+    const guide = guideOfRef.current(segment);
+    const audioUrl = guide === segment.voiceGuide ? segment.tts.audioUrl : null;
+    void sayRef.current(segmentAnnouncement({ title: segment.title, voiceGuide: guide }, index, ex.segments.length), audioUrl);
   }, []);
 
   const haltClock = useCallback(() => {

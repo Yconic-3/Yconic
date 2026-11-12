@@ -22,7 +22,8 @@ import { join } from "node:path";
 import { ApiError, notFound } from "../common/errors";
 import { newId } from "../common/ids";
 import { videosDir, type ApiConfig } from "../config";
-import { loadContents, loadJobs, toVideoAsset, videoUrl, writeAudit, type Db } from "../content/content.store";
+import { insertCreateJob, saveUploadedVideo, type UploadedVideoFile } from "../content/content.ops";
+import { loadContents, loadJobs, videoUrl, writeAudit, type Db } from "../content/content.store";
 import { CONFIG, DB } from "../tokens";
 import type { SegmentInput, UpdateContentBody } from "./validate";
 
@@ -32,13 +33,7 @@ function requirePermission(user: AdminUser, p: AdminPermission) {
   if (!hasPermission(user.role, p)) throw new ApiError("FORBIDDEN", "이 작업을 할 권한이 없습니다.");
 }
 
-export interface UploadedVideoFile {
-  /** 저장소에 저장된 파일 이름 */
-  filename: string;
-  originalname: string;
-  mimetype: string;
-  size: number;
-}
+export type { UploadedVideoFile } from "../content/content.ops";
 
 /**
  * 관리자 화면의 모든 데이터 처리. 규칙은 웹앱 모의 구현(apps/web/src/mock/mock-admin-api.ts)과 같고,
@@ -87,33 +82,7 @@ export class AdminService {
   // ── 영상 ──
 
   async uploadVideo(user: AdminUser, file: UploadedVideoFile | undefined, meta: { durationSec: number; width: number; height: number } | Error): Promise<VideoAsset> {
-    const cleanup = async () => {
-      if (file) await rm(join(videosDir(this.config), file.filename), { force: true });
-    };
-    try {
-      requirePermission(user, "job:create");
-      if (!file) throw new ApiError("VALIDATION", "영상 파일을 함께 보내 주세요.");
-      if (!file.mimetype.startsWith("video/")) throw new ApiError("VALIDATION", "영상 파일만 올릴 수 있습니다.");
-      if (meta instanceof Error) throw meta;
-      const [row] = await this.db
-        .insert(videos)
-        .values({
-          id: newId("v"),
-          fileName: file.originalname,
-          mimeType: file.mimetype,
-          sizeBytes: file.size,
-          durationSec: meta.durationSec,
-          width: meta.width,
-          height: meta.height,
-          storageKey: file.filename,
-          uploadedBy: user.id,
-        })
-        .returning();
-      return toVideoAsset(this.config, row!);
-    } catch (e) {
-      await cleanup();
-      throw e;
-    }
+    return saveUploadedVideo(this.db, this.config, user.id, file, meta, () => requirePermission(user, "job:create"));
   }
 
   async getVideoPlaybackUrl(user: AdminUser, videoId: string): Promise<{ url: string | null }> {
@@ -208,6 +177,7 @@ export class AdminService {
       title: s.title,
       instruction: s.instruction,
       voiceGuide: s.voiceGuide,
+      conciseGuide: s.conciseGuide ?? "",
       repetitions: s.repetitions,
       ttsStatus: prev?.ttsStatus ?? "NONE",
       ttsAudioUrl: prev?.ttsAudioUrl ?? null,
@@ -347,22 +317,7 @@ export class AdminService {
     if (!input.title.trim()) throw new ApiError("VALIDATION", "운동 이름을 입력해 주세요.");
     const [video] = await this.db.select().from(videos).where(eq(videos.id, input.videoId));
     if (!video) throw new ApiError("NOT_FOUND", "영상을 찾을 수 없습니다. 먼저 영상을 올려 주세요.");
-    const jobId = newId("j");
-    await this.db.transaction(async (tx) => {
-      await tx.insert(contentJobs).values({
-        id: jobId,
-        kind: "CREATE",
-        title: input.title.trim(),
-        category: input.category,
-        difficulty: input.difficulty,
-        requestNote: input.requestNote.trim(),
-        videoId: video.id,
-        requestedBy: user.id,
-        // 개발용: 파일 이름에 fail이 들어가면 실패를 시연한다.
-        simulateFailure: /fail/i.test(video.fileName),
-      });
-      await writeAudit(tx, user, "CONTENT_JOB_CREATED", "CONTENT_JOB", jobId, `제작 작업 생성: ${input.title.trim()} (${video.fileName}, ${Math.round(video.durationSec)}초)`);
-    });
+    const jobId = await this.db.transaction((tx) => insertCreateJob(tx, user, input, video));
     return (await loadJobs(this.db, this.config, eq(contentJobs.id, jobId)))[0]!;
   }
 

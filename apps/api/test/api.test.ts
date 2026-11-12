@@ -1,4 +1,4 @@
-import type { AuthAccount, ContentJob, ExerciseContent, LoginResponse, PublishedExercise, VideoAsset } from "@yconic/shared-types";
+import type { AuthAccount, ContentJob, ExerciseContent, LoginResponse, MyContent, PublishedExercise, VideoAsset } from "@yconic/shared-types";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { client, login, startTestServer, type TestServer } from "./helpers";
 
@@ -278,5 +278,106 @@ describe("영상 업로드와 AI 제작 작업", () => {
     expect(replaced.status).toBe(200);
     expect(replaced.body.video.id).toBe(up.body.id);
     expect(replaced.body.segments.length).toBe(c.segments.length);
+  });
+});
+
+describe("회원 콘텐츠 올리기 (/me)", () => {
+  const member = () => login(s.baseUrl, "member@example.com", "member1234");
+
+  /** 회원이 영상을 올리고 작업이 끝나 초안이 생긴 상태로 만든다 */
+  async function memberDraft() {
+    const me = await member();
+    const up = await me.post<VideoAsset>("/me/videos", videoForm("사이드 레그 레이즈.mp4", 60));
+    expect(up.status).toBe(201);
+    const job = await me.post<ContentJob>("/me/content-jobs", { videoId: up.body.id, title: "사이드 레그 레이즈", category: "STRENGTH", difficulty: "BEGINNER", requestNote: "" });
+    expect(job.status).toBe(201);
+    await s.runWorker(60_000);
+    const done = await me.get<ContentJob>(`/me/content-jobs/${job.body.id}`);
+    expect(done.body.status).toBe("COMPLETED");
+    const content = await me.get<MyContent>(`/me/contents/${done.body.contentId}`);
+    return { me, video: up.body, content: content.body };
+  }
+
+  it("로그인하지 않으면 401", async () => {
+    expect((await anon().get("/me/contents")).status).toBe(401);
+  });
+
+  it("회원이 올린 영상으로 초안이 생기고, 화면에서만 전달되던 정보가 함께 온다", async () => {
+    const { content } = await memberDraft();
+    expect(content.status).toBe("DRAFT");
+    expect(content.createdBy).toBe("u-member");
+    expect("internalNote" in content).toBe(false);
+    expect(content.analysis?.findings?.length).toBeGreaterThan(0);
+    const mine = await (await member()).get<MyContent[]>("/me/contents");
+    expect(mine.body.map((c) => c.id)).toEqual([content.id]);
+  });
+
+  it("남이 올린 콘텐츠·작업·영상은 보이지 않는다 (404)", async () => {
+    const { content, video } = await memberDraft();
+    const ed = await editor();
+    expect((await ed.get(`/me/contents/${content.id}`)).status).toBe(404);
+    expect((await ed.get<MyContent[]>("/me/contents")).body.some((c) => c.id === content.id)).toBe(false);
+    // 남의 영상으로는 작업을 만들 수 없다
+    expect((await ed.post("/me/content-jobs", { videoId: video.id, title: "x", category: "STRENGTH", difficulty: "BEGINNER", requestNote: "" })).status).toBe(404);
+  });
+
+  it("음성 안내를 고치면 버전이 오르고, 시각 의존 표현이 남으면 검수 요청을 막는다", async () => {
+    const { me, content } = await memberDraft();
+    const seg = content.segments[1]!;
+    const edited = await me.patch<MyContent>(`/me/contents/${content.id}/guides`, {
+      expectedVersion: content.version,
+      segments: [{ id: seg.id, voiceGuide: "다리를 이렇게 들어 올립니다." }],
+    });
+    expect(edited.status).toBe(200);
+    expect(edited.body.version).toBe(content.version + 1);
+    expect(edited.body.segments[1]!.voiceGuide).toBe("다리를 이렇게 들어 올립니다.");
+
+    const blocked = await me.post(`/me/contents/${content.id}/submit`, { expectedVersion: edited.body.version, confirmed: true });
+    expect(blocked.status).toBe(400);
+    expect(blocked.body.message).toMatch(/2단계/);
+
+    // 옛 버전으로 고치면 409
+    expect((await me.patch(`/me/contents/${content.id}/guides`, { expectedVersion: content.version, segments: [] })).status).toBe(409);
+  });
+
+  it("확인 표시를 하고 검수를 요청하면 운영자가 승인·공개하고, 올린 사람은 승인할 수 없다", async () => {
+    const { me, content } = await memberDraft();
+    expect((await me.post(`/me/contents/${content.id}/submit`, { expectedVersion: content.version, confirmed: false })).status).toBe(400);
+    const sent = await me.post<MyContent>(`/me/contents/${content.id}/submit`, { expectedVersion: content.version, confirmed: true });
+    expect(sent.status).toBe(200);
+    expect(sent.body.status).toBe("IN_REVIEW");
+    expect(sent.body.submittedBy).toBe("u-member");
+
+    // 검수 중에는 더 고칠 수 없다
+    expect((await me.patch(`/me/contents/${content.id}/guides`, { expectedVersion: sent.body.version, segments: [] })).status).toBe(403);
+    // 회원은 관리자 API를 쓸 수 없다
+    expect((await me.post(`/admin/contents/${content.id}/actions`, { action: "APPROVE" })).status).toBe(403);
+
+    const ap = await approver();
+    expect((await ap.post(`/admin/contents/${content.id}/actions`, { action: "APPROVE" })).status).toBe(200);
+    expect((await ap.post(`/admin/contents/${content.id}/actions`, { action: "PUBLISH" })).status).toBe(200);
+    const published = await me.get<MyContent>(`/me/contents/${content.id}`);
+    expect(published.body.status).toBe("PUBLISHED");
+
+    // 감사 로그에 회원은 역할 없이 남는다
+    const logs = await (await superAdmin()).get<{ actorId: string; actorRole: string | null }[]>(`/admin/audit-logs?targetId=${content.id}`);
+    expect(logs.body.some((l) => l.actorId === "u-member" && l.actorRole === null)).toBe(true);
+  });
+});
+
+describe("내 강의 (/me/courses)", () => {
+  it("배운 강의를 저장하고 다시 읽는다. 모르는 강의는 400", async () => {
+    const me = await login(s.baseUrl, "member@example.com", "member1234");
+    expect((await me.get("/me/courses")).body).toEqual({ courseIds: [] });
+    const saved = await me.put("/me/courses", { courseIds: ["lower", "stretch", "lower"] });
+    expect(saved.status).toBe(200);
+    expect([...saved.body.courseIds].sort()).toEqual(["lower", "stretch"]);
+    expect((await me.put("/me/courses", { courseIds: ["요리"] })).status).toBe(400);
+    expect((await anon().get("/me/courses")).status).toBe(401);
+  });
+
+  it("공개 운동의 단계에 짧은 안내가 함께 온다", async () => {
+    const squat = (await anon().get<PublishedExercise>("/exercises/c-squat")).body;
+    expect(squat.segments[1]!.conciseGuide).toMatch(/스쿼트/);
   });
 });

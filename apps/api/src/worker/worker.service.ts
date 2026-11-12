@@ -117,6 +117,7 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
       title: s.title,
       instruction: s.instruction,
       voiceGuide: s.voiceGuide,
+      conciseGuide: s.conciseGuide,
       repetitions: s.repetitions,
       // content-worker가 구간별 음성까지 만든다 (모의 음성 주소)
       ttsStatus: "READY",
@@ -127,7 +128,7 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private analysisInfo(result: VideoAnalysisResult, at: Date) {
-    return { provider: result.provider, model: result.model, analyzedAt: at.toISOString(), summary: result.summary };
+    return { provider: result.provider, model: result.model, analyzedAt: at.toISOString(), summary: result.summary, findings: result.findings };
   }
 
   private async createDraft(tx: Db, job: JobRow, result: VideoAnalysisResult, at: Date): Promise<string> {

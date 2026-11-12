@@ -367,6 +367,14 @@ export default function ContentDetailPage() {
           </Alert>
         </Banner>
       )}
+      {(content.analysis?.findings?.length ?? 0) > 0 && (
+        <Banner>
+          <Alert kind="info">
+            <span className="font-medium">화면에서만 전달되던 정보 {content.analysis!.findings!.length}건 (AI 분석):</span>{" "}
+            {content.analysis!.findings!.map((f) => `${f.kind} — ${f.text}`).join(" / ")} 음성 안내에 이 내용이 들어갔는지 확인해 주세요.
+          </Alert>
+        </Banner>
+      )}
       {reanalyzing && reanalysis && (
         <Banner>
           <Alert kind="info">

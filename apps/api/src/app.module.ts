@@ -11,6 +11,8 @@ import { AuthService } from "./auth/auth.service";
 import { AdminGuard, AuthGuard } from "./auth/guards";
 import { newId } from "./common/ids";
 import { videosDir, type ApiConfig } from "./config";
+import { MeController } from "./me/me.controller";
+import { MeService } from "./me/me.service";
 import { PublicController } from "./public/public.controller";
 import { ANALYZER, CONFIG, DB } from "./tokens";
 import { WorkerService } from "./worker/worker.service";
@@ -37,7 +39,7 @@ export class AppModule {
           defParamCharset: "utf8",
         }),
       ],
-      controllers: [AuthController, PublicController, AdminController],
+      controllers: [AuthController, PublicController, AdminController, MeController],
       providers: [
         { provide: CONFIG, useValue: config },
         { provide: DB, useValue: db },
@@ -46,6 +48,7 @@ export class AppModule {
         AuthGuard,
         AdminGuard,
         AdminService,
+        MeService,
         WorkerService,
       ],
     };

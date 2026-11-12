@@ -24,6 +24,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -68,6 +69,20 @@ export const authSessions = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
   (t) => [index("auth_sessions_account_idx").on(t.accountId)],
+);
+
+/** 회원이 강사에게 배운 강의 (내 강의). 배운 강의의 운동은 짧게 안내한다 (docs/decisions/0007) */
+export const accountCourses = pgTable(
+  "account_courses",
+  {
+    accountId: text("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    /** shared-types LEARNED_COURSE_IDS 중 하나 */
+    courseId: text("course_id").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.accountId, t.courseId] })],
 );
 
 // ── 영상과 콘텐츠 ──
@@ -142,6 +157,8 @@ export const segments = pgTable(
     title: text("title").notNull().default(""),
     instruction: text("instruction").notNull().default(""),
     voiceGuide: text("voice_guide").notNull().default(""),
+    /** 동작을 배운 사람에게 읽어 주는 짧은 안내. 비어 있으면 voice_guide를 읽는다 (docs/decisions/0007) */
+    conciseGuide: text("concise_guide").notNull().default(""),
     repetitions: integer("repetitions"),
     // 음성 파일(TTS). 서버가 관리하며, 화면에서 보낸 값으로 바꾸지 않는다.
     ttsStatus: ttsStatus("tts_status").notNull().default("NONE"),
@@ -191,7 +208,7 @@ export const contentJobs = pgTable(
 
 // ── 감사 로그 ──
 
-/** 모든 생성·수정·승인·공개 기록 (설계 문서 4장). 작업기도 쓰므로 실행자는 계정 참조를 걸지 않는다. */
+/** 모든 생성·수정·승인·공개 기록 (설계 문서 4장). 작업기도 쓰므로 실행자는 계정 참조를 걸지 않는다. 회원도 콘텐츠를 올린다 (docs/decisions/0007). */
 export const auditLogs = pgTable(
   "audit_logs",
   {
@@ -199,7 +216,8 @@ export const auditLogs = pgTable(
     action: auditAction("action").notNull(),
     actorId: text("actor_id").notNull(),
     actorName: text("actor_name").notNull(),
-    actorRole: adminRole("actor_role").notNull(),
+    /** 관리자 역할. 일반 회원(콘텐츠를 올린 사람)이면 비어 있다 */
+    actorRole: adminRole("actor_role"),
     targetType: auditTargetType("target_type").notNull(),
     targetId: text("target_id").notNull(),
     summary: text("summary").notNull(),

@@ -32,7 +32,8 @@ export interface AuditLog {
   action: AuditAction;
   actorId: Id;
   actorName: string;
-  actorRole: AdminRole;
+  /** 실행자의 관리자 역할. 일반 회원(콘텐츠를 올린 사람)이면 null */
+  actorRole: AdminRole | null;
   targetType: "CONTENT" | "CONTENT_JOB" | "VIDEO";
   targetId: Id;
   summary: string;
