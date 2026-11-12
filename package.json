@@ -13,6 +13,7 @@
     "test": "turbo run test",
     "dev:web": "turbo run dev --filter=@yconic/web",
     "dev:api": "turbo run dev --filter=@yconic/api",
+    "dev:agent": "turbo run dev --filter=@yconic/user-agent",
     "db:start": "pnpm --filter @yconic/database db:start",
     "db:generate": "pnpm --filter @yconic/database db:generate",
     "db:migrate": "pnpm --filter @yconic/database db:migrate",

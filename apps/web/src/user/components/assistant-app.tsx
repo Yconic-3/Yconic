@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { DIFFICULTY_LABELS, EXERCISE_CATEGORY_LABELS, type Difficulty } from "@yconic/shared-types";
+import { DIFFICULTY_LABELS, EXERCISE_CATEGORY_LABELS, type AgentAction, type AgentChatResponse, type AgentTurn, type Difficulty } from "@yconic/shared-types";
 import { readSignedInAccount, signOut, type SignedInAccount } from "@/lib/auth";
+import { createDefaultAgentClient, handleLocally, splitAgentActions } from "@/user/lib/agent";
 import { createUserApi, errorMessage, type PublishedExercise } from "@/user/lib/api";
 import { matchesFilter } from "@/user/lib/api/user-api";
-import { parseIntent } from "@/user/lib/intent";
+import { parseIntent, type Intent } from "@/user/lib/intent";
 import { goBack, goHome, INITIAL_NAV, navigate, type NavState, type View } from "@/user/lib/navigation";
 import { formatDuration, SESSION_STATE_LABELS } from "@/user/lib/player";
 import { startListening, type Listener, type ListenError } from "@/user/lib/recognition";
@@ -67,6 +68,7 @@ function exerciseMeta(e: PublishedExercise): string {
 
 export function AssistantApp() {
   const api = useMemo(() => createUserApi(), []);
+  const agent = useMemo(() => createDefaultAgentClient(), []);
   const router = useRouter();
   const pathname = usePathname();
   const routeExerciseId = exerciseIdFromPath(pathname);
@@ -86,6 +88,8 @@ export function AssistantApp() {
   const [listening, setListening] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState("가운데 버튼을 누르고 말하거나, 아래 예시를 눌러 보세요.");
   const [command, setCommand] = useState("");
+  /** AI 에이전트의 답을 기다리는 중 */
+  const [thinking, setThinking] = useState(false);
 
   const rateRef = useRef(rate);
   rateRef.current = rate;
@@ -95,6 +99,12 @@ export function AssistantApp() {
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const firstViewRef = useRef(true);
   const messageSeq = useRef(1);
+  /** 말을 받을 때마다 올린다. 늦게 온 에이전트 답이 그 뒤의 말을 덮지 않게 한다 */
+  const commandSeqRef = useRef(0);
+  /** 에이전트가 이미 말했으면 운동 화면을 열 때의 "준비할게요" 안내를 건너뛴다 */
+  const quietIntroRef = useRef(false);
+  const logRef = useRef(log);
+  logRef.current = log;
 
   const addMessage = useCallback((who: Message["who"], text: string) => {
     setLog((prev) => [...prev, { id: messageSeq.current++, who, text }].slice(-LOG_LIMIT));
@@ -169,10 +179,12 @@ export function AssistantApp() {
       });
     const autoplay = autoplayRef.current;
     autoplayRef.current = false;
+    const quiet = quietIntroRef.current;
+    quietIntroRef.current = false;
     const timer = window.setTimeout(() => {
       if (cancelled) return;
       if (autoplay) sessionRef.current.start();
-      else void say(`${exercise.title}을 준비할게요. ${exercise.summary} "시작"이라고 말하면 1단계부터 안내합니다.`);
+      else if (!quiet) void say(`${exercise.title}을 준비할게요. ${exercise.summary} "시작"이라고 말하면 1단계부터 안내합니다.`);
     }, 50);
     return () => {
       cancelled = true;
@@ -217,25 +229,32 @@ export function AssistantApp() {
     [router],
   );
 
-  const handleHome = useCallback(() => {
-    stopSpeaking();
-    setNav(goHome());
-    if (routeExerciseId) router.push("/");
-    void say("처음 화면이에요. 어떤 운동을 할까요?");
-  }, [routeExerciseId, router, say]);
+  /** quiet면 화면만 옮기고 말하지 않는다 (에이전트가 대신 말할 때) */
+  const handleHome = useCallback(
+    (quiet = false) => {
+      stopSpeaking();
+      setNav(goHome());
+      if (routeExerciseId) router.push("/");
+      if (!quiet) void say("처음 화면이에요. 어떤 운동을 할까요?");
+    },
+    [routeExerciseId, router, say],
+  );
 
-  const handleBack = useCallback(() => {
-    stopSpeaking();
-    if (routeExerciseId) {
-      // 운동 화면에서는 처음 화면으로 돌아간다. 거르던 목록이 있으면 그 목록이 그대로 나온다.
-      router.push("/");
-      void say(`이전 화면, ${viewName(nav.current)}이에요.`);
-      return;
-    }
-    const next = goBack(nav);
-    setNav(next);
-    void say(`이전 화면, ${viewName(next.current)}이에요.`);
-  }, [nav, routeExerciseId, router, say, viewName]);
+  const handleBack = useCallback(
+    (quiet = false) => {
+      stopSpeaking();
+      if (routeExerciseId) {
+        // 운동 화면에서는 처음 화면으로 돌아간다. 거르던 목록이 있으면 그 목록이 그대로 나온다.
+        router.push("/");
+        if (!quiet) void say(`이전 화면, ${viewName(nav.current)}이에요.`);
+        return;
+      }
+      const next = goBack(nav);
+      setNav(next);
+      if (!quiet) void say(`이전 화면, ${viewName(next.current)}이에요.`);
+    },
+    [nav, routeExerciseId, router, say, viewName],
+  );
 
   const handleLogout = useCallback(() => {
     signOut();
@@ -243,23 +262,25 @@ export function AssistantApp() {
     void say("로그아웃했어요.");
   }, [say]);
 
+  const adjustRate = useCallback((delta: number) => {
+    const next = clampRate(rateRef.current + delta);
+    rateRef.current = next;
+    setRate(next);
+    return next;
+  }, []);
+
   const changeRate = useCallback(
     (delta: number) => {
-      const next = clampRate(rateRef.current + delta);
-      rateRef.current = next;
-      setRate(next);
+      const next = adjustRate(delta);
       void say(`말하기 속도 ${next.toFixed(2)}배입니다.`);
     },
-    [say],
+    [adjustRate, say],
   );
 
-  const handleCommand = useCallback(
-    (raw: string) => {
-      const text = raw.trim();
-      if (!text) return;
-      addMessage("me", text);
+  /** 규칙 기반 해석(intent.ts)으로 처리한다. 에이전트가 꺼져 있거나 짧은 조작일 때 */
+  const runIntent = useCallback(
+    (intent: Intent) => {
       const all = exercises ?? [];
-      const intent = parseIntent(text, all);
       const s = sessionRef.current;
 
       switch (intent.type) {
@@ -334,7 +355,113 @@ export function AssistantApp() {
           return;
       }
     },
-    [addMessage, changeRate, exercise, exercises, handleBack, handleHome, openExercise, routeExerciseId, router, say],
+    [changeRate, exercise, exercises, handleBack, handleHome, openExercise, routeExerciseId, router, say],
+  );
+
+  /** 에이전트가 돌려준 할 일 하나를 말 없이 실행한다. 말은 에이전트의 답이 대신한다 */
+  const runAgentAction = useCallback(
+    (action: AgentAction) => {
+      const s = sessionRef.current;
+      switch (action.type) {
+        case "SHOW_LIST":
+          setNav((n) => navigate(n, { name: "list", category: action.category, keyword: action.keyword }));
+          if (routeExerciseId) router.push("/");
+          return;
+        case "OPEN_EXERCISE":
+          if (exercise?.id === action.exerciseId) {
+            if (action.autoplay) s.start();
+            return;
+          }
+          quietIntroRef.current = !action.autoplay;
+          openExercise(action.exerciseId, action.autoplay);
+          return;
+        case "SPEECH_RATE":
+          adjustRate(action.direction === "SLOWER" ? -RATE_STEP : RATE_STEP);
+          return;
+        case "NAVIGATE":
+          if (action.destination === "HOME") handleHome(true);
+          else handleBack(true);
+          return;
+        case "PLAYBACK":
+          switch (action.command) {
+            case "STOP":
+              s.stop();
+              return;
+            case "PAUSE":
+              stopSpeaking();
+              s.pause();
+              return;
+            case "START":
+              s.start();
+              return;
+            case "NEXT":
+              s.next();
+              return;
+            case "PREVIOUS":
+              s.previous();
+              return;
+            case "REPEAT":
+              s.repeat();
+              return;
+          }
+      }
+    },
+    [adjustRate, exercise, handleBack, handleHome, openExercise, routeExerciseId, router],
+  );
+
+  /** 에이전트의 답: 화면 이동·멈춤은 바로, 답을 읽고, 안내를 시작하는 조작은 답을 다 읽은 뒤에 한다 */
+  const runAgentResponse = useCallback(
+    async (response: AgentChatResponse, seq: number) => {
+      const { before, after } = splitAgentActions(response.actions);
+      before.forEach(runAgentAction);
+      const stopped = response.actions.some((a) => a.type === "PLAYBACK" && a.command === "STOP");
+      const reply = response.reply || (stopped ? SAFETY_MESSAGE : "");
+      if (reply) await say(reply);
+      // 읽는 사이에 사용자가 다른 말을 했으면 미뤄 둔 조작은 하지 않는다
+      if (seq !== commandSeqRef.current) return;
+      after.forEach(runAgentAction);
+    },
+    [runAgentAction, say],
+  );
+
+  const handleCommand = useCallback(
+    (raw: string) => {
+      const text = raw.trim();
+      if (!text) return;
+      const seq = ++commandSeqRef.current;
+      // 지금 말을 넣기 전의 대화를 에이전트에게 함께 보낸다
+      const history: AgentTurn[] = logRef.current.map((m) => ({ role: m.who === "me" ? "user" : "assistant", text: m.text }));
+      addMessage("me", text);
+      const intent = parseIntent(text, exercises ?? []);
+
+      if (handleLocally(intent, text, exercise !== null)) {
+        setThinking(false);
+        runIntent(intent);
+        return;
+      }
+
+      setThinking(true);
+      const s = sessionRef.current;
+      void agent
+        .chat({
+          message: text,
+          history,
+          context: {
+            screen: view.name,
+            exerciseId: view.name === "exercise" ? view.exerciseId : null,
+            sessionState: exercise ? s.state : null,
+            segmentIndex: exercise ? s.segmentIndex : null,
+          },
+        })
+        .then((response) => {
+          if (seq !== commandSeqRef.current) return;
+          setThinking(false);
+          // 에이전트를 못 쓰면 규칙 기반 해석으로 처리한다
+          if (response) void runAgentResponse(response, seq);
+          else runIntent(intent);
+        });
+    },
+    [addMessage, agent, exercise, exercises, runAgentResponse, runIntent, view],
   );
 
   const handleCommandRef = useRef(handleCommand);
@@ -458,7 +585,7 @@ export function AssistantApp() {
               </h1>
               <Badge tone={DIFFICULTY_TONE[exercise.difficulty]}>{DIFFICULTY_LABELS[exercise.difficulty]}</Badge>
               <span className="text-lg text-ink-3">{exerciseMeta(exercise)}</span>
-              <Chip className="ml-auto min-h-[48px] text-[17px]" onClick={handleHome}>
+              <Chip className="ml-auto min-h-[48px] text-[17px]" onClick={() => handleHome()}>
                 운동 목록으로
               </Chip>
             </div>
@@ -486,7 +613,7 @@ export function AssistantApp() {
         {exerciseMissing && (
           <Panel id="missing-title" title="운동을 찾을 수 없어요">
             <p className="m-0 text-ink-2">공개가 끝났거나 주소가 잘못되었어요. 운동 목록에서 다시 골라 주세요.</p>
-            <Chip className="self-start" onClick={handleHome}>
+            <Chip className="self-start" onClick={() => handleHome()}>
               운동 목록으로
             </Chip>
           </Panel>
@@ -516,7 +643,7 @@ export function AssistantApp() {
             <span className="text-lg font-bold">{listening ? "듣는 중 · 끄기" : "눌러서 말하기"}</span>
           </button>
           <p role="status" className="m-0 text-lg text-ink-3">
-            {voiceStatus}
+            {thinking ? "답을 생각하고 있어요…" : voiceStatus}
           </p>
           <div role="group" aria-label="바로 말하기" className="flex flex-wrap justify-center gap-2.5">
             {chips.map((c) => (
@@ -566,7 +693,7 @@ export function AssistantApp() {
             title={view.name === "list" ? viewName(view) : "할 수 있는 운동"}
             actions={
               view.name === "list" && (
-                <Chip className="min-h-[48px] text-[17px]" onClick={handleHome}>
+                <Chip className="min-h-[48px] text-[17px]" onClick={() => handleHome()}>
                   전체 운동 보기
                 </Chip>
               )

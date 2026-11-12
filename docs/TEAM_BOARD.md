@@ -12,6 +12,13 @@
 
 ---
 
+## 2026-11-11 · Yconic (사용자 AI 에이전트 — 말로 운동 찾기·조작)
+
+- **사용자 AI 에이전트 `apps/user-agent`(포트 4100)를 붙였다.** "무릎에 무리 없는 하체 운동 있어?", "그거 할래"처럼 자연스러운 말을 Claude로 알아듣는다. 결정 기록: `docs/decisions/0006-사용자-AI-에이전트.md`
+- 실행: `pnpm dev:agent`. AI를 켜려면 `apps/user-agent/.env`에 `ANTHROPIC_API_KEY`를 넣는다 (커밋 금지). 키가 없거나 에이전트를 안 켜도 웹앱은 예전 규칙 기반으로 그대로 동작한다.
+- Claude 연결은 공통 패키지 `packages/ai-common`에 있다. 관리자 에이전트도 이것을 쓴다.
+- **임시인 것**: 설계 문서의 backend-mcp 없이 에이전트가 API를 HTTP로 바로 부른다. 관리자 에이전트 때 MCP로 바꾼다.
+
 ## 2026-11-11 · Yconic (데이터베이스와 API — 이제 웹앱이 서버 데이터를 쓴다)
 
 - **PostgreSQL 18 + NestJS API를 붙였다.** 사용자 화면·관리자 화면·로그인이 모두 API를 쓴다. 결정 기록: `docs/decisions/0005-데이터베이스와-API-구성.md`

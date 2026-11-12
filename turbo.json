@@ -24,7 +24,13 @@
         "JOB_STAGE_MS",
         "TTS_MS",
         "YCONIC_DB_PORT",
-        "YCONIC_PGDATA"
+        "YCONIC_PGDATA",
+        "AGENT_PORT",
+        "API_BASE_URL",
+        "ANTHROPIC_API_KEY",
+        "AI_MODEL",
+        "AI_EFFORT",
+        "AGENT_RATE_LIMIT"
       ]
     },
     "lint": {},

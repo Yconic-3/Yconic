@@ -1,0 +1,25 @@
+{
+  "name": "@yconic/user-agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/main.ts",
+    "start": "tsx src/main.ts",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@yconic/ai-common": "workspace:*",
+    "@yconic/shared-types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@yconic/config": "workspace:*",
+    "@yconic/fixtures": "workspace:*",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.3",
+    "vitest": "^5.1.0"
+  }
+}
