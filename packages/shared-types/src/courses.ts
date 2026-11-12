@@ -1,4 +1,5 @@
 import type { ExerciseCategory, ExerciseContent, ExerciseSegment } from "./exercise";
+import type { MovementId } from "./movements";
 
 /**
  * 내 강의 (docs/decisions/0007).
@@ -20,13 +21,15 @@ export interface LearnedCourse {
   tags: readonly string[];
   /** 말로 고를 때 알아듣는 낱말 */
   words: readonly string[];
+  /** 이 강의에서 배우는 동작. 강의를 등록하면 이 동작들을 아는 것으로 본다 */
+  movements: readonly MovementId[];
 }
 
 export const LEARNED_COURSES: readonly LearnedCourse[] = [
-  { id: "lower", label: "하체 기초", categories: [], tags: ["하체", "다리"], words: ["하체", "스쿼트", "런지", "다리"] },
-  { id: "core", label: "코어", categories: [], tags: ["코어", "복근"], words: ["코어", "플랭크", "복근"] },
-  { id: "upper", label: "상체 기초", categories: [], tags: ["상체", "팔"], words: ["상체", "팔", "푸시업"] },
-  { id: "stretch", label: "스트레칭·요가", categories: ["STRETCHING"], tags: ["스트레칭", "요가"], words: ["스트레칭", "요가"] },
+  { id: "lower", label: "하체 기초", categories: [], tags: ["하체", "다리"], words: ["하체", "다리"], movements: ["squat", "lunge", "calf_raise", "hip_hinge", "bridge"] },
+  { id: "core", label: "코어", categories: [], tags: ["코어", "복근"], words: ["코어", "복근"], movements: ["plank", "crunch", "leg_raise", "bridge"] },
+  { id: "upper", label: "상체 기초", categories: [], tags: ["상체", "팔"], words: ["상체"], movements: ["pushup", "wall_pushup", "arm_raise"] },
+  { id: "stretch", label: "스트레칭·요가", categories: ["STRETCHING"], tags: ["스트레칭", "요가"], words: ["스트레칭", "요가"], movements: ["neck_stretch", "side_stretch", "hamstring_stretch", "breathing"] },
 ];
 
 export function courseLabel(id: CourseId): string {

@@ -1,5 +1,6 @@
 import type { AccessibilityFinding } from "./analysis";
 import type { Id, ISODateString } from "./common";
+import type { MovementId } from "./movements";
 
 export const EXERCISE_CATEGORIES = ["STRETCHING", "STRENGTH", "CARDIO", "BALANCE", "REHAB"] as const;
 export type ExerciseCategory = (typeof EXERCISE_CATEGORIES)[number];
@@ -92,6 +93,8 @@ export interface ExerciseSegment {
    * 예전 데이터에는 없을 수 있다 (docs/decisions/0007, courses.ts)
    */
   conciseGuide?: string;
+  /** 이 단계의 동작 (AI 분석기가 붙인다). 사용자가 아는 동작이면 어느 영상에서든 짧게 안내한다 (movements.ts) */
+  movements?: MovementId[];
   /** 반복 횟수. 시간 기반 동작이면 null */
   repetitions: number | null;
   tts: TtsAsset;
