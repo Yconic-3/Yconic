@@ -79,6 +79,7 @@ export async function seedDatabase(db: Database, nowMs = Date.now()): Promise<vo
           voiceGuide: s.voiceGuide,
           conciseGuide: s.conciseGuide ?? "",
           movements: s.movements ?? [],
+          narration: s.narration ?? [],
           repetitions: s.repetitions,
           ttsStatus: s.tts.status,
           ttsAudioUrl: s.tts.audioUrl,

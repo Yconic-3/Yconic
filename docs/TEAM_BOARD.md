@@ -19,6 +19,7 @@
 - 실제 분석을 쓰려면 `apps/api/.env`에 `ANTHROPIC_API_KEY`, 그리고 ffmpeg·Python(faster-whisper)이 필요하다. 없으면 `VIDEO_ANALYZER=mock`.
 - 테이블이 늘었다 (`account_movements`, `personalized_guides`, `segments.movements`). 받은 뒤 `pnpm db:migrate`.
 - 자세한 내용: `docs/decisions/0008-실제-영상-분석과-동작-단위-맞춤-안내.md`
+- **강사 말과 안내가 겹치지 않게**: 음성 안내를 켜면 강사가 말하는 부분은 영상 소리를 끄고 맞춤 안내가 대신 말한다. 끄면 원래 영상 그대로. **"소리벗"이라고 부르면 듣는다.** (`docs/decisions/0009-강사-말-대신-맞춤-안내와-부르면-듣기.md`, 마이그레이션 0004)
 
 ## 2026-11-12 · Yconic (사용자 화면을 유튜브처럼: 찾기 → 영상 목록 → 시청)
 

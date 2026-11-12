@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { auditLogs, contentJobs, contents, segments, videos, type Database } from "@yconic/database";
 import {
+  attachNarration,
   CONTENT_STATUS_LABELS,
   CONTENT_TRANSITIONS,
   canEditContent,
@@ -143,7 +144,10 @@ export class AdminService {
       const before = new Map((await tx.select().from(segments).where(eq(segments.contentId, id))).map((s) => [s.id, s]));
       await tx.delete(segments).where(eq(segments.contentId, id));
       if (input.segments.length > 0) {
-        await tx.insert(segments).values(input.segments.map((s, i) => this.segmentRow(id, s, i, before.get(s.id))));
+        // 강사의 말(받아쓰기)은 분석기만 만든다. 구간 시각이 바뀌어도 말한 시각에 맞는 구간에 다시 나눠 담는다
+        const lines = [...before.values()].flatMap((s) => s.narration).sort((a, b) => a.startSec - b.startSec);
+        const narrations = attachNarration(input.segments, lines).map((s) => s.narration);
+        await tx.insert(segments).values(input.segments.map((s, i) => ({ ...this.segmentRow(id, s, i, before.get(s.id)), narration: narrations[i]! })));
       }
       await tx
         .update(contents)
@@ -179,6 +183,7 @@ export class AdminService {
       voiceGuide: s.voiceGuide,
       conciseGuide: s.conciseGuide ?? "",
       movements: s.movements ?? prev?.movements ?? [],
+      narration: prev?.narration ?? [],
       repetitions: s.repetitions,
       ttsStatus: prev?.ttsStatus ?? "NONE",
       ttsAudioUrl: prev?.ttsAudioUrl ?? null,

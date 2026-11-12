@@ -26,6 +26,30 @@ def load_audio(path: str) -> np.ndarray:
     return np.frombuffer(out, dtype=np.float32).copy()
 
 
+# 낱말 사이가 이만큼(초) 비면 말이 끊긴 것으로 보고 줄을 나눈다.
+# Whisper는 말 사이의 음악까지 한 줄로 묶기도 해서, 낱말 시각으로 실제로 말한 구간만 남긴다.
+PAUSE_SEC = 0.8
+
+
+def split_by_pause(seg) -> list:
+    words = [w for w in (seg.words or []) if w.word.strip()]
+    if not words:
+        text = seg.text.strip()
+        return [{"start": round(seg.start, 1), "end": round(seg.end, 1), "text": text}] if text else []
+    lines, chunk = [], [words[0]]
+    for w in words[1:]:
+        if w.start - chunk[-1].end > PAUSE_SEC:
+            lines.append(chunk)
+            chunk = [w]
+        else:
+            chunk.append(w)
+    lines.append(chunk)
+    return [
+        {"start": round(c[0].start, 1), "end": round(c[-1].end, 1), "text": "".join(w.word for w in c).strip()}
+        for c in lines
+    ]
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         print("사용법: python transcribe.py <영상 파일> [모델 이름]", file=sys.stderr)
@@ -34,8 +58,10 @@ def main() -> None:
     model_name = sys.argv[2] if len(sys.argv) > 2 else "small"
     audio = load_audio(path)
     model = WhisperModel(model_name, device="cpu", compute_type="int8")
-    segments, info = model.transcribe(audio, language="ko", vad_filter=True, beam_size=5)
-    out = [{"start": round(s.start, 1), "end": round(s.end, 1), "text": s.text.strip()} for s in segments if s.text.strip()]
+    segments, info = model.transcribe(audio, language="ko", vad_filter=True, beam_size=5, word_timestamps=True)
+    out = []
+    for seg in segments:
+        out.extend(split_by_pause(seg))
     sys.stdout.reconfigure(encoding="utf-8")
     print(json.dumps({"language": info.language, "duration": round(len(audio) / SAMPLE_RATE, 1), "segments": out}, ensure_ascii=False))
 

@@ -1,5 +1,6 @@
 import { textOf, type AiModel, type ClaudeContentBlockParam } from "@yconic/ai-common";
 import {
+  attachNarration,
   DIFFICULTY_LABELS,
   EXERCISE_CATEGORY_LABELS,
   findVisualOnlyPhrases,
@@ -30,14 +31,19 @@ const SYSTEM_PROMPT = `너는 시각장애인을 위한 운동 영상 접근성 
 - kind는 INTRO(준비·설명), EXERCISE(운동 동작), REST(휴식), OUTRO(마무리) 중 하나다.
 - movements에는 그 단계의 동작을 주어진 동작 목록에서만 고른다. 목록에 맞는 것이 없거나 준비·휴식이면 빈 배열이다.
 
+이 안내가 쓰이는 방식
+- 음성 안내를 켠 사용자(시각장애인)에게는 강사가 말하는 동안 영상 소리를 끄고, 이 안내를 그 단계가 시작될 때 대신 읽어 준다. 강사의 말은 들리지 않는다.
+- 그래서 안내는 강사의 말을 대신하는 대본이다. 따라 하는 데 필요한 강사의 말(횟수, 시간, 호흡, 주의점, 다음 동작 예고)은 빠짐없이 담고, 인사나 잡담은 뺀다.
+- 그 단계 길이 안에 다 읽을 수 있어야 한다. 1초에 4글자를 넘지 않게 쓴다 (예: 15초 단계는 60글자 이하).
+
 자세한 안내(voiceGuide) — 그 동작을 처음 하는 시각장애인용
 - 시작 자세, 몸의 방향(앞·뒤·오른쪽·왼쪽, 천장·바닥 쪽), 손과 발의 위치, 움직이는 속도(몇 초), 횟수, 호흡, 주의점을 말로 설명한다.
 - 강사가 말한 중요한 내용은 살리고, 화면에만 나온 정보(자막, 숫자, 시범 동작의 방향과 깊이)는 말로 옮긴다.
 - 다음 표현은 화면을 봐야 알 수 있으므로 쓰지 않는다: ${VISUAL_ONLY_PHRASES.join(", ")}.
-- 한국어 존댓말, 두세 문장. 단계가 짧으면 그 시간 안에 읽을 수 있게(1초에 약 4글자) 줄인다.
+- 한국어 존댓말, 두세 문장.
 
 짧은 안내(conciseGuide) — 그 동작을 이미 배운 사람용
-- 표준 동작 이름과 핵심 수치만 한 문장으로 (예: "스쿼트 10회, 3초 내려가고 2초 올라오기").
+- 표준 동작 이름과 핵심 수치만 한 문장으로 (예: "스쿼트 10회, 3초 내려가고 2초 올라오기"). 강사의 말 대신 나오므로 횟수·시간은 빼지 않는다.
 
 화면에서만 전달되던 정보(findings)
 - 강사의 말에는 없고 화면(자막, 숫자, 시범)으로만 전달된 정보를 찾는다. kind는 "동작 방향", "신체 위치", "화면 자막", "속도·횟수", "기타" 중 하나, text에는 몇 초쯤 무엇이 화면에만 나왔는지 쓴다.
@@ -136,6 +142,7 @@ export function normalizeSegments(raw: RawSegment[], durationSec: number): Detec
       voiceGuide: s.voiceGuide.trim(),
       conciseGuide: s.conciseGuide.trim(),
       movements: [...new Set(s.movements.filter(isMovementId))],
+      narration: [],
       repetitions: Number.isInteger(s.repetitions) && s.repetitions > 0 ? s.repetitions : null,
       confidence: Math.min(1, Math.max(0, Number.isFinite(s.confidence) ? s.confidence : 0.5)),
     });
@@ -204,7 +211,11 @@ export function createClaudeVideoAnalyzer({ model, media }: ClaudeAnalyzerDeps):
       }
 
       onProgress?.("GENERATING_TTS", 90, "음성 안내를 정리하는 중입니다.");
-      const segments = normalizeSegments(raw.segments, input.durationSec);
+      // 강사가 말한 시각을 단계마다 담아 둔다. 음성 안내를 켜면 이 시각에 영상 소리를 끈다 (0009)
+      const segments = attachNarration(
+        normalizeSegments(raw.segments, input.durationSec),
+        transcript.map((l) => ({ startSec: r1(l.start), endSec: r1(l.end), text: l.text })),
+      );
       if (segments.length === 0) throw new Error("영상에서 운동 단계를 찾지 못했습니다. 전신이 나오는 운동 영상인지 확인해 주세요.");
       segments.forEach((s, i) => {
         const visual = [...findVisualOnlyPhrases(s.voiceGuide), ...findVisualOnlyPhrases(s.conciseGuide)];

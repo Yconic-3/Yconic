@@ -8,7 +8,10 @@ import {
   DIFFICULTY_LABELS,
   EXERCISE_CATEGORIES,
   EXERCISE_CATEGORY_LABELS,
+  fitSpeechRate,
   guideLevelLabel,
+  hasNarration,
+  isNarrationAt,
   knowsMovement,
   movementLabel,
   type AgentAction,
@@ -33,6 +36,8 @@ import { formatDuration, SESSION_STATE_LABELS } from "@/user/lib/player";
 import { searchExercises, searchPath, searchTerms } from "@/user/lib/search";
 import { micPermissionText, requestMicPermission, watchMicPermission, type MicPermission } from "@/user/lib/mic-permission";
 import { startListening, type Listener, type ListenError } from "@/user/lib/recognition";
+import { playEarcon } from "@/user/lib/earcon";
+import { ARM_MS, createCommandGate, WAKE_WORD } from "@/user/lib/wake-word";
 import { ShellContext, type PageCommandHandler, type PageInfo, type ShellApi, type ShellMode } from "@/user/lib/shell";
 import {
   clampRate,
@@ -73,11 +78,11 @@ function exerciseIdFromPath(pathname: string | null): string | null {
   return m ? decodeURIComponent(m[1]!) : null;
 }
 
-const GREETING = '안녕하세요. 어떤 운동 영상을 찾을까요? 큰 버튼을 누르고 "하체 운동"처럼 말하거나, 아래 검색창에 써 주세요.';
+const GREETING = '안녕하세요. 어떤 운동 영상을 찾을까요? "소리벗"이라고 부른 뒤 "하체 운동"처럼 말하거나, 큰 버튼을 누르고 말하거나, 아래 검색창에 써 주세요.';
 const SAFETY_MESSAGE =
   "운동을 멈췄습니다. 편한 자세로 쉬세요. 통증이나 어지럼, 숨찬 느낌이 계속되면 운동을 그만하고 주변 사람이나 의료진의 도움을 받으세요.";
 const HELP_MESSAGE =
-  "이렇게 말할 수 있습니다. 영상을 찾을 때는 하체 운동, 스트레칭처럼 찾을 말을. 영상을 고를 때는 운동 이름과 시작. 운동 중에는 멈춰, 계속, 다음, 이전, 다시. 그 밖에 음성 안내 꺼, 로그인, 콘텐츠 올리기, 처음으로, 이전 화면.";
+  "먼저 소리벗이라고 부른 뒤 말해 주세요. 이렇게 말할 수 있습니다. 영상을 찾을 때는 하체 운동, 스트레칭처럼 찾을 말을. 영상을 고를 때는 운동 이름과 시작. 운동 중에는 멈춰, 계속, 다음, 이전, 다시. 그 밖에 음성 안내 꺼, 부르면 듣기 꺼, 스쿼트 배웠어, 로그인, 콘텐츠 올리기, 처음으로, 이전 화면.";
 
 const LISTEN_ERROR_TEXT: Record<ListenError, string> = {
   unsupported: "이 브라우저는 음성 인식을 지원하지 않아요. 아래 칸에 글로 입력해 주세요.",
@@ -100,19 +105,29 @@ interface Message {
 /** 로그인해야 쓸 수 있는 주소 */
 const SUPPLY_PREFIX = "/my";
 
-function readPrefs(): { tts: boolean; rate: number } {
+interface VoicePrefs {
+  /** 음성 안내 켬·끔 */
+  tts: boolean;
+  /** 말 속도 */
+  rate: number;
+  /** 부르면 듣기 ("소리벗") 켬·끔 */
+  wake: boolean;
+}
+
+function readPrefs(): VoicePrefs {
   try {
     const raw = window.localStorage.getItem(PREFS_KEY);
-    const v = raw ? (JSON.parse(raw) as { tts?: unknown; rate?: unknown }) : {};
-    return { tts: v.tts !== false, rate: typeof v.rate === "number" ? clampRate(v.rate) : 1 };
+    const v = raw ? (JSON.parse(raw) as { tts?: unknown; rate?: unknown; wake?: unknown }) : {};
+    return { tts: v.tts !== false, rate: typeof v.rate === "number" ? clampRate(v.rate) : 1, wake: v.wake !== false };
   } catch {
-    return { tts: true, rate: 1 };
+    return { tts: true, rate: 1, wake: true };
   }
 }
 
-function writePrefs(prefs: { tts: boolean; rate: number }) {
+/** 바꾼 설정만 넘기면 나머지는 그대로 둔다 */
+function writePrefs(patch: Partial<VoicePrefs>) {
   try {
-    window.localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+    window.localStorage.setItem(PREFS_KEY, JSON.stringify({ ...readPrefs(), ...patch }));
   } catch {
     // 저장하지 못해도 이번 화면에서는 그대로 쓴다
   }
@@ -233,6 +248,8 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
   useEffect(() => {
     const prefs = readPrefs();
     setSpeechEnabled(prefs.tts);
+    wakeEnabledRef.current = prefs.wake;
+    setWakeEnabledState(prefs.wake);
     rateRef.current = prefs.rate;
     setRate(prefs.rate);
   }, []);
@@ -281,11 +298,13 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
    * 음성 안내를 껐으면 스크린리더가 읽도록 알림 영역에도 넣는다 (켜져 있으면 소리와 겹치지 않게 넣지 않는다).
    */
   const say = useCallback(
-    (text: string, audioUrl?: string | null) => {
+    (text: string, audioUrl?: string | null, opts?: { fitSec?: number }) => {
       addMessage("bot", text);
       setLastSaid(text);
       if (!speechEnabledRef.current) setAnnounce(text);
-      return speak(text, { rate: rateRef.current, audioUrl });
+      // 단계 안내는 그 단계 안에 다 읽도록 말 속도를 맞춘다 (영상 속도에 맞추기)
+      const rate = opts?.fitSec ? fitSpeechRate(text, opts.fitSec, rateRef.current) : rateRef.current;
+      return speak(text, { rate, audioUrl });
     },
     [addMessage],
   );
@@ -323,6 +342,24 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
   const session = useExerciseSession(exercise, videoRef, say, guideOf);
   const sessionRef = useRef(session);
   sessionRef.current = session;
+
+  // 영상 소리와 앱의 음성이 겹치지 않게 한다 (docs/decisions/0009).
+  // 음성 안내를 켜면: 앱이 말하는 동안, 호출어를 듣는 동안, 영상 속 강사가 말하는 동안 영상 소리를 끈다.
+  //   강사의 말은 이 사람에 맞게 다시 쓴 안내가 대신하고, 음악·박자 소리는 그대로 들린다.
+  // 음성 안내를 끄면(일반 사용자): 원래 영상 소리를 그대로 들려준다.
+  const armedRef = useRef(false);
+  useEffect(() => {
+    if (!exercise) return;
+    const segments = exercise.segments;
+    const timer = window.setInterval(() => {
+      const video = videoRef.current;
+      if (!video) return;
+      const sp = getSpeechState();
+      const mute = sp.enabled && (sp.speaking || armedRef.current || isNarrationAt(segments, video.currentTime));
+      if (video.muted !== mute) video.muted = mute;
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [exercise]);
 
   // 끝까지 따라 하면 이 영상의 동작을 연습한 것으로 기록한다. 세 번이면 그 동작은 짧게 안내한다.
   const reportedRef = useRef<string | null>(null);
@@ -475,7 +512,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       }
       setSpeechEnabled(on);
       speechEnabledRef.current = on;
-      writePrefs({ tts: on, rate: rateRef.current });
+      writePrefs({ tts: on });
       setAnnounce(on ? "음성 안내를 켰습니다." : "음성 안내를 껐습니다.");
       if (on) void say("음성 안내를 켰습니다.");
       else setLastSaid("음성 안내를 껐습니다. 이제 안내는 여기에 글로만 표시됩니다.");
@@ -523,7 +560,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     const next = clampRate(rateRef.current + delta);
     rateRef.current = next;
     setRate(next);
-    writePrefs({ tts: speechEnabledRef.current, rate: next });
+    writePrefs({ rate: next });
     return next;
   }, []);
 
@@ -567,6 +604,12 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           return;
         case "TTS_ON":
           setTts(true);
+          return;
+        case "WAKE_ON":
+          setWakeEnabled(true);
+          return;
+        case "WAKE_OFF":
+          setWakeEnabled(false);
           return;
         case "TTS_OFF":
           setTts(false);
@@ -803,26 +846,82 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
   const handleCommandRef = useRef(handleCommand);
   handleCommandRef.current = handleCommand;
 
-  const toggleListening = useCallback(async () => {
-    if (listenerRef.current) {
-      listenerRef.current.stop();
-      listenerRef.current = null;
-      setListening(false);
-      setVoiceStatus("듣기를 껐어요.");
-      setAnnounce("듣기를 껐습니다.");
-      return;
-    }
-    // 아직 허용하지 않았으면 먼저 묻는다. 차단됐으면 다시 허용하는 방법을 알려 준다
-    if (micRef.current !== "granted") {
-      const ok = await askMicPermission();
-      if (!ok) return;
-      stopSpeaking();
-    }
+  // ── 부르면 듣기 (docs/decisions/0009) ──
+  // 마이크를 켜 두고 "소리벗"이라고 부른 뒤의 말만 명령으로 받는다. 큰 버튼을 누르는 것은 부른 것과 같다.
+  // 호출어 없이 들린 말(영상 속 강사의 말, 주변 소리)은 명령으로 받지 않는다.
+  const gateRef = useRef(createCommandGate());
+  const [armed, setArmed] = useState(false);
+  const armTimerRef = useRef<number | null>(null);
+  const [wakeEnabled, setWakeEnabledState] = useState(true);
+  const wakeEnabledRef = useRef(wakeEnabled);
+  wakeEnabledRef.current = wakeEnabled;
+
+  const idleVoiceStatus = useCallback(
+    () => (wakeEnabledRef.current && listenerRef.current ? `"${WAKE_WORD}"라고 부르거나 큰 버튼을 누르고 말하세요.` : "큰 버튼을 누르고 말하세요."),
+    [],
+  );
+  const stopListener = useCallback(() => {
+    listenerRef.current?.stop();
+    listenerRef.current = null;
+    setListening(false);
+  }, []);
+  /** 부르면 듣기가 꺼져 있고 듣기 상태도 아니면 마이크를 끈다 */
+  const releaseListener = useCallback(() => {
+    if (!wakeEnabledRef.current && !armedRef.current) stopListener();
+  }, [stopListener]);
+  const clearArmTimer = () => {
+    if (armTimerRef.current !== null) window.clearTimeout(armTimerRef.current);
+    armTimerRef.current = null;
+  };
+  const disarm = useCallback(
+    (sound: boolean) => {
+      clearArmTimer();
+      gateRef.current.disarm();
+      armedRef.current = false;
+      setArmed(false);
+      if (sound) playEarcon("cancel");
+      setVoiceStatus(idleVoiceStatus());
+      releaseListener();
+    },
+    [idleVoiceStatus, releaseListener],
+  );
+  /** 다음 한 마디를 명령으로 받는다. 그동안 안내를 멈추고 영상 소리를 끈다 */
+  const arm = useCallback(() => {
+    gateRef.current.arm();
+    armedRef.current = true;
+    setArmed(true);
+    stopSpeaking();
+    playEarcon("listen");
+    setVoiceStatus("듣고 있어요. 말씀하세요.");
+    clearArmTimer();
+    armTimerRef.current = window.setTimeout(() => disarm(true), ARM_MS);
+  }, [disarm]);
+
+  const heard = useCallback(
+    (text: string) => {
+      const r = gateRef.current.feed(text);
+      if (!r) return;
+      if (r.kind === "armed") {
+        arm();
+        return;
+      }
+      clearArmTimer();
+      armedRef.current = false;
+      setArmed(false);
+      setVoiceStatus(`들린 말: "${r.text}"`);
+      handleCommandRef.current(r.text);
+      releaseListener();
+    },
+    [arm, releaseListener],
+  );
+  const heardRef = useRef(heard);
+  heardRef.current = heard;
+
+  /** 마이크 듣기를 켠다 (이미 켜져 있으면 그대로) */
+  const ensureListener = useCallback((): boolean => {
+    if (listenerRef.current) return true;
     const listener = startListening({
-      onText: (text) => {
-        setVoiceStatus(`들린 말: "${text}"`);
-        handleCommandRef.current(text);
-      },
+      onText: (text) => heardRef.current(text),
       onError: (error) => {
         setVoiceStatus(LISTEN_ERROR_TEXT[error]);
         if (error === "denied") setMic("denied");
@@ -832,13 +931,45 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
         }
       },
     });
-    if (listener) {
-      listenerRef.current = listener;
-      setListening(true);
-      setVoiceStatus("듣고 있어요. 편하게 말씀하세요.");
-      setAnnounce("듣기를 켰습니다.");
+    if (!listener) return false;
+    listenerRef.current = listener;
+    setListening(true);
+    return true;
+  }, []);
+
+  // 마이크가 허용돼 있고 부르면 듣기가 켜져 있으면 계속 듣는다
+  useEffect(() => {
+    if (wakeEnabled && mic === "granted") {
+      if (ensureListener()) setVoiceStatus(idleVoiceStatus());
+    } else if (!wakeEnabled && !armedRef.current) {
+      stopListener();
     }
-  }, [askMicPermission]);
+  }, [ensureListener, idleVoiceStatus, mic, stopListener, wakeEnabled]);
+
+  const setWakeEnabled = useCallback(
+    (on: boolean) => {
+      wakeEnabledRef.current = on;
+      setWakeEnabledState(on);
+      writePrefs({ wake: on });
+      void say(on ? `부르면 듣기를 켰어요. "${WAKE_WORD}"라고 부르면 들을게요.` : "부르면 듣기를 껐어요. 말하려면 큰 버튼을 눌러 주세요.");
+    },
+    [say],
+  );
+
+  /** 큰 버튼: "소리벗"이라고 부른 것과 같다. 듣는 중에 누르면 그만 듣는다 */
+  const pressToTalk = useCallback(async () => {
+    if (armedRef.current) {
+      disarm(true);
+      return;
+    }
+    // 아직 허용하지 않았으면 먼저 묻는다. 차단됐으면 다시 허용하는 방법을 알려 준다
+    if (micRef.current !== "granted") {
+      const ok = await askMicPermission();
+      if (!ok) return;
+    }
+    if (!ensureListener()) return;
+    arm();
+  }, [arm, askMicPermission, disarm, ensureListener]);
 
   const submitSearch = (e: FormEvent) => {
     e.preventDefault();
@@ -941,19 +1072,27 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
         )}
         <button
           type="button"
-          onClick={() => void toggleListening()}
-          aria-pressed={listening}
+          onClick={() => void pressToTalk()}
+          aria-pressed={armed}
           className={`flex w-full items-center justify-center gap-4 rounded-3xl border-4 border-accent font-extrabold ${isHome ? "min-h-[128px] text-[30px]" : "min-h-[96px] text-[26px]"} max-[960px]:min-h-[88px] max-[960px]:text-[24px] ${
-            listening ? "bg-accent text-bg hover:bg-accent-hover" : "bg-bg text-accent hover:bg-accent-tint"
+            armed ? "bg-accent text-bg hover:bg-accent-hover" : "bg-bg text-accent hover:bg-accent-tint"
           }`}
         >
           <MicIcon />
-          <span>{listening ? "듣는 중 · 눌러서 끄기" : "눌러서 말하기"}</span>
+          <span>{armed ? "듣는 중 · 말씀하세요" : "눌러서 말하기"}</span>
         </button>
         <p role="status" className="m-0 text-[18px] text-ink-2 max-[960px]:text-center max-[960px]:text-[16px]">
           {thinking ? "답을 생각하고 있어요…" : voiceStatus}
           <span className="max-[960px]:hidden"> · 마이크 권한: {micPermissionText(mic ?? "unknown").label}</span>
         </p>
+        <button
+          type="button"
+          onClick={() => setWakeEnabled(!wakeEnabled)}
+          aria-pressed={wakeEnabled}
+          className="m-0 self-start text-[17px] font-bold text-info underline decoration-2 underline-offset-[5px] hover:text-info-light max-[960px]:self-center max-[960px]:text-[15px]"
+        >
+          부르면 듣기(“{WAKE_WORD}”): {wakeEnabled ? (listening ? "켜짐 · 듣는 중" : "켜짐 · 마이크 허용 필요") : "꺼짐"}
+        </button>
       </div>
 
       <p className="m-0 text-[17px] text-ink-3">
@@ -1204,6 +1343,17 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
                       다음 단계
                     </Button>
                   </div>
+                  {/* 음성 안내 켜기·끄기: 시각장애인은 맞춤 안내로, 일반 사용자는 원래 영상 그대로 (docs/decisions/0009) */}
+                  <Button size="lg" icon={speech.enabled ? ICONS.speakerOff : ICONS.speaker} aria-pressed={!speech.enabled} onClick={() => setTts(!speech.enabled)}>
+                    {speech.enabled ? "음성 안내 끄고 원래 영상으로 보기" : "음성 안내 켜기"}
+                  </Button>
+                  <p className="m-0 text-[18px] text-ink-2">
+                    {!speech.enabled
+                      ? "음성 안내가 꺼져 있어요. 영상 소리를 그대로 들려 드려요."
+                      : hasNarration(exercise.segments)
+                        ? "음성 안내가 켜져 있어요. 강사가 말하는 부분은 영상 소리를 끄고, 내가 배운 것에 맞춘 안내로 대신 읽어 드려요."
+                        : "음성 안내가 켜져 있어요. 단계마다 안내를 읽어 드려요."}
+                  </p>
                   {exercise.precautions.length > 0 && <Caution label="주의할 자세">{exercise.precautions.join(" ")}</Caution>}
                 </section>
 

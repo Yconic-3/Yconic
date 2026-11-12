@@ -12,6 +12,7 @@ import {
   ruleGuideText,
   segmentDurationSec,
   segmentGuideLevel,
+  speechBudgetChars,
   type AuthAccount,
   type CourseId,
   type ExerciseContent,
@@ -32,6 +33,11 @@ import { AI, CONFIG, DB } from "../tokens";
 const MAX_GUIDE_CHARS = 400;
 
 const PERSONALIZE_PROMPT = `너는 시각장애인을 위한 운동 앱의 맞춤 음성 안내 작가다. 한 사용자가 어떤 동작을 이미 배웠는지(학습 프로필)를 보고, 운동 영상의 단계별 안내를 그 사람에게 맞게 다시 쓴다.
+
+이 안내가 쓰이는 방식
+- 이 사용자에게는 영상 속 강사가 말하는 동안 영상 소리를 끄고, 네가 쓴 안내를 그 단계가 시작될 때 대신 읽어 준다. 강사의 말과 네 안내가 함께 들리는 일은 없다.
+- 그래서 네 안내는 강사의 말을 이 사람에게 맞게 다시 쓴 대본이다. 강사의 말 중 따라 하는 데 필요한 것(횟수, 시간, 호흡, 주의점, 다음 동작 예고)은 담고, 인사·잡담·이 사람이 이미 아는 설명은 뺀다.
+- 단계마다 주어진 글자 수(최대 글자)를 넘지 않는다. 영상 속도에 맞춰 그 단계 안에 다 읽어야 한다.
 
 - level이 concise인 단계(그 사람이 배운 동작): 배운 사람답게 짧게 쓴다. 그 사람이 강사에게 배운 용어가 있으면 그 말을 쓴다. 동작 이름, 횟수, 속도 같은 핵심만 한두 문장.
 - level이 detailed인 단계(처음 하는 동작이거나 준비·휴식): 자세한 안내를 바탕으로 처음 하는 사람이 따라 할 수 있게 쓴다. 그 사람이 배운 동작과 비슷한 점이 있으면 "스쿼트에서 배운 대로 엉덩이를 뒤로 빼며"처럼 이어서 설명해 새 동작을 쉽게 익히게 한다.
@@ -223,8 +229,9 @@ export class LearningService {
         return [
           `## 단계 segmentId=${s.id}`,
           `level: ${r.level}`,
-          `제목: ${s.title} (${Math.round(segmentDurationSec(s))}초)`,
+          `제목: ${s.title} (${Math.round(segmentDurationSec(s))}초, 최대 ${speechBudgetChars(segmentDurationSec(s))}글자)`,
           `동작: ${(s.movements ?? []).map(movementLabel).join(", ") || "없음"}`,
+          `강사가 실제로 한 말: ${(s.narration ?? []).map((l) => l.text).join(" ") || "(말 없음)"}`,
           `자세한 안내: ${s.voiceGuide || "(없음)"}`,
           `짧은 안내: ${s.conciseGuide || "(없음)"}`,
         ].join("\n");
@@ -241,10 +248,11 @@ export class LearningService {
     if (message.stop_reason === "refusal" || message.stop_reason === "max_tokens") throw new Error(`AI 응답이 끝나지 않음 (${message.stop_reason})`);
     const parsed = JSON.parse(textOf(message.content)) as { segments: { segmentId: string; text: string }[] };
     const byId = new Map(parsed.segments.map((g) => [g.segmentId, g.text.trim()]));
-    // AI가 쓴 글이 비었거나 길거나 화면 의존 표현이 있으면 그 단계만 규칙 안내로 둔다
-    return rule.map((r) => {
+    // AI가 쓴 글이 비었거나, 단계 안에 읽기에 너무 길거나, 화면 의존 표현이 있으면 그 단계만 규칙 안내로 둔다
+    return rule.map((r, i) => {
       const text = byId.get(r.segmentId);
-      const ok = !!text && text.length <= MAX_GUIDE_CHARS && findVisualOnlyPhrases(text).length === 0;
+      const budget = Math.min(MAX_GUIDE_CHARS, Math.ceil(speechBudgetChars(segmentDurationSec(content.segments[i]!)) * 1.3));
+      const ok = !!text && text.length <= budget && findVisualOnlyPhrases(text).length === 0;
       return ok ? { ...r, text } : r;
     });
   }

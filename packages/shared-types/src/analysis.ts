@@ -1,4 +1,4 @@
-import type { SegmentKind } from "./exercise";
+import type { NarrationLine, SegmentKind } from "./exercise";
 import type { MovementId } from "./movements";
 
 /**
@@ -29,6 +29,8 @@ export interface DetectedSegment {
   conciseGuide: string;
   /** 이 단계의 동작 */
   movements: MovementId[];
+  /** 이 단계에서 강사가 말한 것 (받아쓰기). 말이 없으면 빈 배열 */
+  narration: NarrationLine[];
   repetitions: number | null;
   /** 분석기의 확신도 0~1. 낮으면 관리자가 더 꼼꼼히 봐야 한다. */
   confidence: number;
