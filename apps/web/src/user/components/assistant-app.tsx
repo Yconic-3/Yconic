@@ -7,6 +7,7 @@ import {
   courseLabel,
   courseOfExercise,
   DIFFICULTY_LABELS,
+  EXERCISE_CATEGORIES,
   EXERCISE_CATEGORY_LABELS,
   guideLevelFor,
   guideLevelLabel,
@@ -22,10 +23,11 @@ import { createDefaultAgentClient, handleLocally, splitAgentActions } from "@/us
 import { createUserApi, errorMessage, type PublishedExercise } from "@/user/lib/api";
 import { createCoursesApi } from "@/user/lib/courses-api";
 import { eulReul, ieyo } from "@/user/lib/korean";
-import { matchesFilter } from "@/user/lib/api/user-api";
 import { parseIntent, type Intent } from "@/user/lib/intent";
-import { goBack, goHome, INITIAL_NAV, navigate, type NavState, type View } from "@/user/lib/navigation";
+import { HOME_VIEW, type View } from "@/user/lib/navigation";
 import { formatDuration, SESSION_STATE_LABELS } from "@/user/lib/player";
+import { searchExercises, searchPath, searchTerms } from "@/user/lib/search";
+import { micPermissionText, requestMicPermission, watchMicPermission, type MicPermission } from "@/user/lib/mic-permission";
 import { startListening, type Listener, type ListenError } from "@/user/lib/recognition";
 import { ShellContext, type PageCommandHandler, type PageInfo, type ShellApi, type ShellMode } from "@/user/lib/shell";
 import {
@@ -41,7 +43,8 @@ import {
   subscribeSpeech,
 } from "@/user/lib/speech";
 import { useExerciseSession } from "@/user/lib/use-exercise-session";
-import { Brand, Button, Caution, Icon, ICONS, InfoBox, INPUT_CLASS, ListButton, MicIcon, Section } from "./ui";
+import { Brand, Button, Caution, Icon, ICONS, INPUT_CLASS, ListButton, MicIcon, Section } from "./ui";
+import { VideoCard, VideoRow } from "./video-cards";
 
 /*
  * 사용자 화면 — 디자인 시안 D (소리벗 · 다크 고대비, 음성 패널 + 세로 본문)
@@ -66,11 +69,11 @@ function exerciseIdFromPath(pathname: string | null): string | null {
   return m ? decodeURIComponent(m[1]!) : null;
 }
 
-const GREETING = '안녕하세요. 어떤 운동을 할까요? 운동 이름을 말하거나, 콘텐츠를 올리려면 "콘텐츠 올리기"라고 말해 주세요.';
+const GREETING = '안녕하세요. 어떤 운동 영상을 찾을까요? 큰 버튼을 누르고 "하체 운동"처럼 말하거나, 아래 검색창에 써 주세요.';
 const SAFETY_MESSAGE =
   "운동을 멈췄습니다. 편한 자세로 쉬세요. 통증이나 어지럼, 숨찬 느낌이 계속되면 운동을 그만하고 주변 사람이나 의료진의 도움을 받으세요.";
 const HELP_MESSAGE =
-  "이렇게 말할 수 있습니다. 운동을 찾을 때는 하체 운동 찾아줘, 운동을 고를 때는 운동 이름과 시작. 운동 중에는 멈춰, 계속, 다음, 이전, 다시. 음성 안내 꺼, 음성 켜, 로그인, 콘텐츠 올리기, 홈, 이전 화면.";
+  "이렇게 말할 수 있습니다. 영상을 찾을 때는 하체 운동, 스트레칭처럼 찾을 말을. 영상을 고를 때는 운동 이름과 시작. 운동 중에는 멈춰, 계속, 다음, 이전, 다시. 그 밖에 음성 안내 꺼, 로그인, 콘텐츠 올리기, 처음으로, 이전 화면.";
 
 const LISTEN_ERROR_TEXT: Record<ListenError, string> = {
   unsupported: "이 브라우저는 음성 인식을 지원하지 않아요. 아래 칸에 글로 입력해 주세요.",
@@ -155,7 +158,6 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
 
   const [exercises, setExercises] = useState<PublishedExercise[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [nav, setNav] = useState<NavState>(INITIAL_NAV);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [log, setLog] = useState<Message[]>([{ id: 0, who: "bot", text: GREETING }]);
   const [lastSaid, setLastSaid] = useState(GREETING);
@@ -164,12 +166,19 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
   const [announce, setAnnounce] = useState("");
   const [rate, setRate] = useState(1);
   const [listening, setListening] = useState(false);
-  const [voiceStatus, setVoiceStatus] = useState("위의 큰 버튼을 누르고 말하세요.");
-  const [command, setCommand] = useState("");
+  const [voiceStatus, setVoiceStatus] = useState("큰 버튼을 누르고 말하세요.");
+  /** 검색창에 쓴 말 */
+  const [query, setQuery] = useState("");
   /** AI 에이전트의 답을 기다리는 중 */
   const [thinking, setThinking] = useState(false);
   /** children 페이지가 알려 준 제목·예시 말 */
   const [page, setPage] = useState<PageInfo | null>(null);
+  /** 마이크 사용 권한 (브라우저가 알려 준 상태) */
+  // 브라우저가 상태를 알려 주기 전에는 null (안내 카드가 깜빡이지 않게)
+  const [mic, setMic] = useState<MicPermission | null>(null);
+  const micRef = useRef(mic);
+  micRef.current = mic;
+  useEffect(() => watchMicPermission(setMic), []);
 
   const rateRef = useRef(rate);
   rateRef.current = rate;
@@ -186,6 +195,8 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
   const commandSeqRef = useRef(0);
   /** 에이전트가 이미 말했으면 운동 화면을 열 때의 "준비할게요" 안내를 건너뛴다 */
   const quietIntroRef = useRef(false);
+  /** 에이전트가 이미 말했으면 검색 결과 화면이 결과를 다시 읽지 않게 한다 */
+  const quietPageRef = useRef(false);
   const logRef = useRef(log);
   logRef.current = log;
 
@@ -214,15 +225,12 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     void loadExercises();
   }, [loadExercises]);
 
-  // 운동 화면은 주소(/exercises/[id])가 정하고, 운동하기 홈 안의 목록 거르기는 nav가 기억한다.
-  const view: View = useMemo(
-    () => (routeExerciseId ? { name: "exercise", exerciseId: routeExerciseId } : nav.current),
-    [routeExerciseId, nav],
-  );
+  // 시청 화면은 주소(/exercises/[id])가 정한다. 검색 결과는 /search 페이지가 그린다.
+  const view: View = useMemo(() => (routeExerciseId ? { name: "exercise", exerciseId: routeExerciseId } : HOME_VIEW), [routeExerciseId]);
   const mode: ShellMode = pathname.startsWith(SUPPLY_PREFIX) ? "supply" : (page?.mode ?? "consume");
 
   // 화면이 바뀌면 맨 위로 올리고 제목으로 초점을 옮겨, 스크린리더가 새 화면의 처음부터 읽게 한다.
-  const viewKey = shellRoute ? JSON.stringify(view) : pathname;
+  const viewKey = `${pathname}|${page?.title ?? ""}`;
   useEffect(() => {
     if (firstViewRef.current) {
       firstViewRef.current = false;
@@ -310,25 +318,6 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     [],
   );
 
-  const listLabel = useCallback((v: Extract<View, { name: "list" }>) => (v.category ? EXERCISE_CATEGORY_LABELS[v.category] : (v.keyword ?? "전체")), []);
-
-  const viewName = useCallback(
-    (v: View): string => {
-      if (v.name === "home") return "운동하기 홈";
-      if (v.name === "list") return `${listLabel(v)} 운동 목록`;
-      return `${exercises?.find((e) => e.id === v.exerciseId)?.title ?? "운동"} 안내`;
-    },
-    [exercises, listLabel],
-  );
-
-  const listFor = useCallback(
-    (v: View): PublishedExercise[] => {
-      const all = exercises ?? [];
-      if (v.name !== "list") return all;
-      return all.filter((e) => matchesFilter(e, { category: v.category ?? undefined, keyword: v.keyword ?? undefined }));
-    },
-    [exercises],
-  );
 
   /** 운동 화면(/exercises/[id])으로 간다. 마이크와 대화는 그대로 이어진다. */
   const openExercise = useCallback(
@@ -359,9 +348,8 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
         if (!quiet) void say("내 콘텐츠 화면입니다. 새 콘텐츠를 만들거나 올린 콘텐츠의 상태를 확인할 수 있습니다.");
         return;
       }
-      setNav(goHome());
       if (pathname !== "/") router.push("/");
-      if (!quiet) void say("운동하기 홈입니다. 어떤 운동을 할까요?");
+      if (!quiet) void say("처음 화면입니다. 어떤 운동 영상을 찾을까요?");
     },
     [mode, pathname, router, say],
   );
@@ -369,17 +357,30 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
   const handleBack = useCallback(
     (quiet = false) => {
       stopSpeaking();
-      if (!shellRoute || routeExerciseId) {
-        // 페이지 주소에서는 브라우저의 이전 화면으로 간다. 운동 화면에서 돌아가면 거르던 목록이 그대로 나온다.
-        router.back();
-        if (!quiet) void say("이전 화면입니다.");
+      if (pathname === "/") {
+        if (!quiet) void say("처음 화면입니다.");
         return;
       }
-      const next = goBack(nav);
-      setNav(next);
-      if (!quiet) void say(`이전 화면, ${viewName(next.current)}입니다.`);
+      // 브라우저의 이전 화면으로 간다. 시청 화면에서 돌아가면 검색 결과가 그대로 나온다.
+      router.back();
+      if (!quiet) void say("이전 화면입니다.");
     },
-    [nav, routeExerciseId, router, say, shellRoute, viewName],
+    [pathname, router, say],
+  );
+
+  /** 검색 결과 화면으로 간다. 결과는 그 화면이 읽어 준다. quiet면 읽지 않는다 (에이전트가 대신 말할 때) */
+  const goSearch = useCallback(
+    (text: string, quiet = false) => {
+      stopSpeaking();
+      quietPageRef.current = quiet;
+      if (!searchTerms(text).length) {
+        if (pathname !== "/") router.push("/");
+        if (!quiet) void say(`전체 운동 영상은 ${exercises?.length ?? 0}개입니다. 찾을 말을 말하거나 영상을 골라 주세요.`);
+        return;
+      }
+      router.push(searchPath(text));
+    },
+    [exercises, pathname, router, say],
   );
 
   const handleLogout = useCallback(() => {
@@ -409,6 +410,31 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     [say],
   );
 
+  /**
+   * 마이크 사용을 허용해 달라고 한다. 브라우저 창이 뜨기 전에 말로 먼저 알린다.
+   * 허용되면 true. 이미 차단돼 있으면 브라우저 설정에서 다시 허용하는 방법을 읽어 준다.
+   */
+  const askMicPermission = useCallback(async (): Promise<boolean> => {
+    if (micRef.current === "denied") {
+      const help = micPermissionText("denied").help;
+      setVoiceStatus(`마이크 권한: 차단됨`);
+      void say(help);
+      return false;
+    }
+    setVoiceStatus("브라우저가 마이크 사용을 묻고 있어요. 허용을 눌러 주세요.");
+    void say("브라우저가 마이크를 써도 되는지 물으면 허용을 눌러 주세요.");
+    const result = await requestMicPermission();
+    setMic(result);
+    if (result === "granted") {
+      setVoiceStatus("마이크를 쓸 수 있어요.");
+      void say("마이크를 허용했습니다. 이제 큰 버튼을 누르고 말하세요.");
+      return true;
+    }
+    setVoiceStatus(`마이크 권한: ${micPermissionText(result).label}`);
+    void say(micPermissionText(result).help);
+    return false;
+  }, [say]);
+
   const toggleTtsPause = useCallback(() => {
     const s = getSpeechState();
     if (s.paused) {
@@ -436,16 +462,9 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     [adjustRate, say],
   );
 
-  const showAllExercises = useCallback(() => {
-    stopSpeaking();
-    setNav((n) => navigate(n, { name: "list", category: null, keyword: null }));
-    if (pathname !== "/") router.push("/");
-    void say(`운동 목록입니다. 전체 ${exercises?.length ?? 0}개입니다. 이름을 말하면 시작할게요.`);
-  }, [exercises, pathname, router, say]);
-
   /** 규칙 기반 해석(intent.ts)으로 처리한다. 에이전트가 꺼져 있거나 짧은 조작·앱 명령일 때 */
   const runIntent = useCallback(
-    (intent: Intent) => {
+    (intent: Intent, text = "") => {
       const all = exercises ?? [];
       const s = sessionRef.current;
 
@@ -469,6 +488,10 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
         case "LOGOUT":
           handleLogout();
           return;
+        case "MIC":
+          if (micRef.current === "granted") void say("마이크가 이미 허용되어 있습니다. 큰 버튼을 누르고 말하세요.");
+          else void askMicPermission();
+          return;
         case "TTS_ON":
           setTts(true);
           return;
@@ -482,8 +505,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           if (getSpeechState().paused) toggleTtsPause();
           return;
         case "CONSUME":
-          setNav(goHome());
-          goTo("/", "운동하기 홈입니다. 어떤 운동을 할까요?");
+          goTo("/", "처음 화면입니다. 어떤 운동 영상을 찾을까요?");
           return;
         case "SUPPLY":
           goTo("/my/contents", "콘텐츠 올리기 화면입니다. 새 콘텐츠를 만들려면 새 콘텐츠라고 말해 주세요.");
@@ -510,20 +532,10 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
             .catch((e: unknown) => say(`내 강의를 저장하지 못했어요. ${e instanceof Error ? e.message : ""}`));
           return;
         }
-        case "LIST": {
-          const target: View = { name: "list", category: intent.category, keyword: intent.keyword };
-          const found = all.filter((e) => matchesFilter(e, { category: intent.category ?? undefined, keyword: intent.keyword ?? undefined }));
-          stopSpeaking();
-          setNav((n) => navigate(n, target));
-          if (pathname !== "/") router.push("/");
-          const label = intent.category ? EXERCISE_CATEGORY_LABELS[intent.category] : (intent.keyword ?? "");
-          void say(
-            found.length
-              ? `${label ? `${label} 운동은 ` : "할 수 있는 운동은 "}${found.map((e) => e.title).join(", ")}이에요. 이름을 말하면 시작할게요.`
-              : `${label} 운동을 찾지 못했어요. "홈"이라고 말하면 전체 목록으로 돌아갑니다.`,
-          );
+        case "LIST":
+          // 찾을 말이 있으면 검색 결과로, 없으면("운동 찾아줘") 처음 화면의 전체 목록으로
+          goSearch(intent.category ? EXERCISE_CATEGORY_LABELS[intent.category] : (intent.keyword ?? text));
           return;
-        }
         case "OPEN":
           if (exercise?.id === intent.exerciseId) {
             if (intent.autoplay) s.start();
@@ -539,17 +551,22 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           changeRate(RATE_STEP);
           return;
         case "UNKNOWN":
+          // 알아듣지 못한 말은 검색어로 써 본다 ("목 풀기" → 목 스트레칭)
+          if (mode === "consume" && text && searchExercises(all, text).length > 0) {
+            goSearch(text);
+            return;
+          }
           void say(
             mode === "supply"
               ? "잘 못 들었어요. 새 콘텐츠, 분석 시작, 미리 듣기, 검수 요청, 운동하기 중에서 말씀해 주세요."
-              : "잘 못 들었어요. 도움말이라고 말하면 쓸 수 있는 말을 알려 드릴게요.",
+              : "그 말로는 영상을 찾지 못했어요. 다른 말로 찾거나, 도움말이라고 말해 주세요.",
           );
           return;
       }
 
       // 여기부터는 운동을 고른 뒤에만 쓰는 재생 명령
       if (!exercise) {
-        void say('먼저 운동을 골라 주세요. "하체 운동 찾아줘"나 "스쿼트 시작"이라고 말해 보세요.');
+        void say('먼저 영상을 골라 주세요. "하체 운동"처럼 찾을 말을 하거나 "스쿼트 시작"이라고 말해 보세요.');
         return;
       }
       switch (intent.type) {
@@ -572,7 +589,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           return;
       }
     },
-    [changeRate, exercise, exercises, goTo, handleBack, handleHome, handleLogout, learned, mode, openExercise, pathname, router, say, setLearnedCourses, setTts, toggleTtsPause],
+    [askMicPermission, changeRate, exercise, exercises, goSearch, goTo, handleBack, handleHome, handleLogout, learned, mode, openExercise, say, setLearnedCourses, setTts, toggleTtsPause],
   );
 
   /** 에이전트가 돌려준 할 일 하나를 말 없이 실행한다. 말은 에이전트의 답이 대신한다 */
@@ -581,8 +598,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       const s = sessionRef.current;
       switch (action.type) {
         case "SHOW_LIST":
-          setNav((n) => navigate(n, { name: "list", category: action.category, keyword: action.keyword }));
-          if (pathname !== "/") router.push("/");
+          goSearch(action.keyword ?? (action.category ? EXERCISE_CATEGORY_LABELS[action.category] : ""), true);
           return;
         case "OPEN_EXERCISE":
           if (exercise?.id === action.exerciseId) {
@@ -623,7 +639,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           }
       }
     },
-    [adjustRate, exercise, handleBack, handleHome, openExercise, pathname, router],
+    [adjustRate, exercise, goSearch, handleBack, handleHome, openExercise],
   );
 
   /** 에이전트의 답: 화면 이동·멈춤은 바로, 답을 읽고, 안내를 시작하는 조작은 답을 다 읽은 뒤에 한다 */
@@ -666,7 +682,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       // 콘텐츠 올리기 화면에서는 운동 에이전트를 쓰지 않는다
       if (mode === "supply" || handleLocally(intent, text, exercise !== null)) {
         setThinking(false);
-        runIntent(intent);
+        runIntent(intent, text);
         return;
       }
 
@@ -677,7 +693,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           message: text,
           history,
           context: {
-            screen: shellRoute ? view.name : "home",
+            screen: routeExerciseId ? "exercise" : pathname === "/search" ? "list" : "home",
             exerciseId: view.name === "exercise" ? view.exerciseId : null,
             sessionState: exercise ? s.state : null,
             segmentIndex: exercise ? s.segmentIndex : null,
@@ -688,16 +704,16 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           setThinking(false);
           // 에이전트를 못 쓰면 규칙 기반 해석으로 처리한다
           if (response) void runAgentResponse(response, seq);
-          else runIntent(intent);
+          else runIntent(intent, text);
         });
     },
-    [addMessage, agent, exercise, exercises, mode, runAgentResponse, runIntent, shellRoute, view],
+    [addMessage, agent, exercise, exercises, mode, pathname, routeExerciseId, runAgentResponse, runIntent, view],
   );
 
   const handleCommandRef = useRef(handleCommand);
   handleCommandRef.current = handleCommand;
 
-  const toggleListening = useCallback(() => {
+  const toggleListening = useCallback(async () => {
     if (listenerRef.current) {
       listenerRef.current.stop();
       listenerRef.current = null;
@@ -706,6 +722,12 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       setAnnounce("듣기를 껐습니다.");
       return;
     }
+    // 아직 허용하지 않았으면 먼저 묻는다. 차단됐으면 다시 허용하는 방법을 알려 준다
+    if (micRef.current !== "granted") {
+      const ok = await askMicPermission();
+      if (!ok) return;
+      stopSpeaking();
+    }
     const listener = startListening({
       onText: (text) => {
         setVoiceStatus(`들린 말: "${text}"`);
@@ -713,6 +735,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       },
       onError: (error) => {
         setVoiceStatus(LISTEN_ERROR_TEXT[error]);
+        if (error === "denied") setMic("denied");
         if (error !== "failed") {
           listenerRef.current = null;
           setListening(false);
@@ -725,13 +748,24 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       setVoiceStatus("듣고 있어요. 편하게 말씀하세요.");
       setAnnounce("듣기를 켰습니다.");
     }
-  }, []);
+  }, [askMicPermission]);
 
-  const submitCommand = (e: FormEvent) => {
+  const submitSearch = (e: FormEvent) => {
     e.preventDefault();
-    const text = command;
-    setCommand("");
-    handleCommand(text);
+    const text = query.trim();
+    if (!text) {
+      void say("찾을 말을 먼저 써 주세요.");
+      return;
+    }
+    const intent = parseIntent(text, exercises ?? []);
+    if (intent.type === "SAFETY" || (intent.type !== "LIST" && intent.type !== "OPEN" && intent.type !== "UNKNOWN" && handleLocally(intent, text, exercise !== null))) {
+      setQuery("");
+      handleCommand(text);
+      return;
+    }
+    addMessage("me", text);
+    setLastHeard(text);
+    goSearch(text);
   };
 
   const togglePlay = () => {
@@ -755,58 +789,145 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       setPageCommands: (handler) => {
         pageCommandsRef.current = handler;
       },
+      exercises,
+      levelOf,
+      openExercise,
+      shouldAnnounce: () => {
+        const quiet = quietPageRef.current;
+        quietPageRef.current = false;
+        return !quiet;
+      },
     }),
-    [account, accountId, learned, refreshAccount, say, setLearnedCourses],
+    [account, accountId, exercises, learned, levelOf, openExercise, refreshAccount, say, setLearnedCourses],
   );
 
   // ── 화면에 쓸 값 ──
-  const list = listFor(view);
+  const all = exercises ?? [];
   const currentSegment = exercise?.segments[session.segmentIndex] ?? null;
-  const isHomeView = pathname === "/" && view.name === "home";
-
-  const headline = !shellRoute
+  const isHome = pathname === "/";
+  const pageHeadline = !shellRoute
     ? (page?.title ?? "")
     : routeExerciseId
-      ? (exercise?.title ?? (exerciseMissing ? "운동을 찾을 수 없어요" : "운동을 불러오는 중이에요"))
-      : view.name === "list"
-        ? `${listLabel(view)} 운동 목록`
-        : "어떤 운동을 할까요?";
-  const modeLabel = `${mode === "supply" ? "콘텐츠 올리기" : "운동하기"} · ${account ? `${account.name}님` : "로그인 전"}`;
-  const pageTitle = headline ? `${headline} — 소리벗` : "소리벗 — 말로 찾고, 듣고 따라 하는 운동";
-
-  const chips =
-    page?.chips ??
-    (exercise ? ["시작", "다음", "다시", "멈춰"] : mode === "supply" ? ["새 콘텐츠", "운동하기"] : ["하체 운동 찾아줘", "스쿼트 시작", account ? "내 강의" : "로그인"]);
-
-  const menu: { label: string; sub: string; icon: string; path: string; strong?: boolean; go(): void }[] =
-    mode === "supply"
-      ? [
-          { label: "내 콘텐츠", sub: "올린 콘텐츠의 검수·공개 상태 보기", icon: ICONS.video, path: "/my/contents", go: () => runIntent({ type: "SUPPLY" }) },
-          { label: "새 콘텐츠 만들기", sub: "영상을 올리고 음성 안내 초안 만들기", icon: ICONS.plus, path: "/my/contents/new", go: () => runIntent({ type: "NEW_CONTENT" }) },
-          { label: "운동하기로 바꾸기", sub: "운동을 찾고 안내를 듣는 화면", icon: ICONS.swap, path: "", strong: true, go: () => runIntent({ type: "CONSUME" }) },
-        ]
-      : [
-          {
-            label: account ? "내 계정" : "로그인",
-            sub: account ? `${account.name}님 · 로그아웃은 여기서` : "로그인하면 내 강의와 콘텐츠 올리기를 쓸 수 있습니다",
-            icon: account ? ICONS.user : ICONS.login,
-            path: "/account",
-            go: () => runIntent({ type: "ACCOUNT" }),
-          },
-          { label: "운동 목록 열기", sub: `전체 운동 ${exercises?.length ?? 0}개`, icon: ICONS.list, path: "", go: showAllExercises },
-          {
-            label: "내 강의 바꾸기",
-            sub: account ? `현재: ${learned?.length ? learned.map(courseLabel).join(", ") : "등록 없음"}` : "로그인 필요",
-            icon: ICONS.book,
-            path: "/courses",
-            go: () => runIntent({ type: "COURSES", courseId: null, learned: true }),
-          },
-          { label: "콘텐츠 올리기로 바꾸기", sub: "운동 영상을 올리는 분을 위한 화면", icon: ICONS.swap, path: "", strong: true, go: () => runIntent({ type: "SUPPLY" }) },
-        ];
+      ? (exercise?.title ?? (exerciseMissing ? "영상을 찾을 수 없어요" : "영상을 불러오는 중이에요"))
+      : "어떤 운동 영상을 찾을까요?";
+  const pageTitle = isHome ? "소리벗 — 말로 찾고, 듣고 따라 하는 운동" : pageHeadline ? `${pageHeadline} — 소리벗` : "소리벗";
+  const hints =
+    page?.chips ?? (exercise ? ["시작", "다음", "다시", "멈춰"] : mode === "supply" ? ["새 콘텐츠", "운동하기"] : ["하체 운동", "스트레칭", "스쿼트 시작"]);
+  const others = exercise ? all.filter((e) => e.id !== exercise.id) : [];
 
   const ttsStatus = speech.paused ? "읽기를 잠시 멈췄습니다." : `읽는 중: ${lastSaid.length > 60 ? `${lastSaid.slice(0, 60)}…` : lastSaid}`;
   const ttsPauseLabel = speech.paused ? "이어서 읽기" : "읽기 잠시 멈춤";
   const showTtsControl = speech.speaking || speech.paused;
+
+  /**
+   * 말로 찾기 구역: 큰 「눌러서 말하기」 → 상태 → 검색창 → 방금 안내.
+   * 시작 화면에서는 가운데 크게(제목 포함), 다른 화면에서는 본문 위에 놓는다.
+   * 좁은 화면에서는 마이크만 화면 맨 아래에 붙는다.
+   */
+  const voiceArea = (
+    <section id="voice" aria-label="말로 찾기" className={`flex flex-col gap-4 ${isHome ? "mx-auto w-full max-w-[760px] text-center" : "w-full max-w-[960px]"}`}>
+      {isHome && (
+        <div className="flex flex-col gap-2">
+          <h1 ref={headingRef} tabIndex={-1} className="m-0 text-[44px] font-extrabold leading-tight tracking-[-0.5px] max-[960px]:text-[30px] max-[420px]:text-[26px]">
+            어떤 운동 영상을 찾을까요?
+          </h1>
+          <p className="m-0 text-[20px] text-ink-2">큰 버튼을 누르고 말하거나, 아래 검색창에 써 주세요.</p>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-3 max-[960px]:fixed max-[960px]:inset-x-0 max-[960px]:bottom-0 max-[960px]:z-10 max-[960px]:gap-2 max-[960px]:border-t-2 max-[960px]:border-line max-[960px]:bg-panel max-[960px]:px-4 max-[960px]:pb-4 max-[960px]:pt-2.5">
+        {showTtsControl && (
+          <button
+            type="button"
+            onClick={toggleTtsPause}
+            aria-pressed={speech.paused}
+            className="hidden min-h-[60px] w-full items-center justify-center gap-2.5 rounded-2xl border-[3px] border-info bg-bg text-[21px] font-extrabold text-info max-[960px]:flex"
+          >
+            <Icon d={speech.paused ? ICONS.play : ICONS.pause} size={22} />
+            <span>{ttsPauseLabel}</span>
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => void toggleListening()}
+          aria-pressed={listening}
+          className={`flex w-full items-center justify-center gap-4 rounded-3xl border-4 border-accent font-extrabold ${isHome ? "min-h-[128px] text-[30px]" : "min-h-[96px] text-[26px]"} max-[960px]:min-h-[88px] max-[960px]:text-[24px] ${
+            listening ? "bg-accent text-bg hover:bg-accent-hover" : "bg-bg text-accent hover:bg-accent-tint"
+          }`}
+        >
+          <MicIcon />
+          <span>{listening ? "듣는 중 · 눌러서 끄기" : "눌러서 말하기"}</span>
+        </button>
+        <p role="status" className="m-0 text-[18px] text-ink-2 max-[960px]:text-center max-[960px]:text-[16px]">
+          {thinking ? "답을 생각하고 있어요…" : voiceStatus}
+          <span className="max-[960px]:hidden"> · 마이크 권한: {micPermissionText(mic ?? "unknown").label}</span>
+        </p>
+      </div>
+
+      <p className="m-0 text-[17px] text-ink-3">
+        이렇게 말해 보세요: {hints.map((h) => `“${h}”`).join(", ")}
+      </p>
+
+      {/* 마이크 안내: 시작 화면에서는 크게, 다른 화면에서는 한 줄로 (영상 목록이 밀리지 않게) */}
+      {mic !== null && mic !== "granted" &&
+        (isHome ? (
+          <MicPermissionCard state={mic} onRequest={() => void askMicPermission()} />
+        ) : (
+          micPermissionText(mic).canRequest && (
+            <p className="m-0 text-[17px] text-ink-2">
+              마이크 권한: {micPermissionText(mic).label}.{" "}
+              <button type="button" onClick={() => void askMicPermission()} className="font-bold text-info underline decoration-2 underline-offset-[5px] hover:text-info-light">
+                {mic === "denied" ? "다시 허용하는 방법 듣기" : "마이크 사용 허용하기"}
+              </button>
+            </p>
+          )
+        ))}
+
+      <form role="search" onSubmit={submitSearch} className="flex gap-3 max-[520px]:flex-col">
+        <label htmlFor="search" className="sr-only">
+          운동 영상 검색
+        </label>
+        <input
+          id="search"
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="운동 영상 검색 (예: 하체, 목, 스트레칭)"
+          autoComplete="off"
+          className={`${INPUT_CLASS} !min-h-[64px] flex-1 !text-[20px]`}
+        />
+        <Button type="submit" tone="inverse" icon={ICONS.search} block={false} className="!min-h-[64px] px-7">
+          검색
+        </Button>
+      </form>
+
+      <div className={`flex flex-col gap-1.5 rounded-2xl border-2 border-accent bg-panel px-5 py-4 ${isHome ? "text-left" : ""}`}>
+        <h2 id="last-said-title" className="m-0 text-[16px] font-bold text-ink-3">
+          방금 안내
+        </h2>
+        <p className="m-0 whitespace-pre-line text-[20px] leading-[1.55]">{lastSaid}</p>
+        <p className="m-0 flex flex-wrap items-center gap-x-4 gap-y-1 text-[16px] text-ink-3">
+          <span>내가 한 말: {lastHeard ?? "아직 없음"}</span>
+          <button
+            type="button"
+            onClick={() => void speak(lastSaid, { rate: rateRef.current })}
+            className="font-bold text-info underline decoration-2 underline-offset-[5px] hover:text-info-light"
+          >
+            다시 듣기
+          </button>
+          <span className="flex items-center gap-2">
+            말 속도 {rate.toFixed(2)}배
+            <button type="button" onClick={() => changeRate(-RATE_STEP)} className="font-bold text-info underline decoration-2 underline-offset-[5px] hover:text-info-light">
+              느리게
+            </button>
+            <button type="button" onClick={() => changeRate(RATE_STEP)} className="font-bold text-info underline decoration-2 underline-offset-[5px] hover:text-info-light">
+              빠르게
+            </button>
+          </span>
+        </p>
+      </div>
+    </section>
+  );
 
   return (
     <ShellContext.Provider value={shellApi}>
@@ -816,36 +937,49 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           본문으로 건너뛰기
         </a>
         <a href="#voice" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-xl focus:bg-accent focus:px-4 focus:py-3 focus:!text-bg">
-          마이크로 건너뛰기
+          말로 찾기로 건너뛰기
         </a>
         <div aria-live="polite" className="sr-only">
           {announce}
         </div>
 
-        {/* ── 머리말 ── */}
+        {/* ── 머리말: 이름, 메뉴 (운동 찾기 · 콘텐츠 올리기 · 내 강의 · 계정 · 음성 안내) ── */}
         <header className="border-b-2 border-line">
-          <div className="mx-auto flex max-w-[1180px] flex-nowrap items-center gap-x-6 gap-y-3 px-4 py-4 max-[960px]:flex-wrap">
+          <div className="mx-auto flex max-w-[1280px] flex-nowrap items-center gap-x-6 gap-y-3 px-4 py-4 max-[1100px]:flex-wrap">
             <Brand />
-            <nav aria-label="화면 종류" className="ml-auto flex flex-nowrap items-center gap-2 max-[960px]:ml-0 max-[960px]:w-full max-[960px]:flex-wrap">
-              <HeaderTab current={mode === "consume"} icon={ICONS.exercise} onClick={() => runIntent({ type: "CONSUME" })}>
-                운동하기
+            <nav aria-label="메뉴" className="ml-auto flex flex-nowrap items-center gap-2 max-[1100px]:ml-0 max-[1100px]:w-full max-[1100px]:flex-wrap">
+              <HeaderTab current={mode === "consume" && pathname !== "/courses" && pathname !== "/account"} icon={ICONS.search} onClick={() => runIntent({ type: "CONSUME" })}>
+                운동 찾기
               </HeaderTab>
               <HeaderTab current={mode === "supply"} icon={ICONS.upload} onClick={() => runIntent({ type: "SUPPLY" })}>
                 콘텐츠 올리기
               </HeaderTab>
+              <HeaderTab current={pathname === "/courses"} icon={ICONS.book} onClick={() => runIntent({ type: "COURSES", courseId: null, learned: true })}>
+                내 강의
+              </HeaderTab>
               <button
                 type="button"
-                onClick={() => (account ? handleLogout() : runIntent({ type: "ACCOUNT" }))}
-                className="flex min-h-[56px] items-center gap-2.5 whitespace-nowrap rounded-[14px] border-[3px] border-info bg-bg px-5 font-bold text-info hover:bg-info-tint active:bg-info active:text-bg max-[960px]:flex-[1_1_150px] max-[960px]:justify-center"
+                onClick={() => runIntent({ type: "ACCOUNT" })}
+                aria-current={pathname === "/account" ? "page" : undefined}
+                className="flex min-h-[56px] items-center gap-2.5 whitespace-nowrap rounded-[14px] border-[3px] border-info bg-bg px-5 font-bold text-info hover:bg-info-tint active:bg-info active:text-bg max-[1100px]:flex-[1_1_150px] max-[1100px]:justify-center"
               >
-                <Icon d={account ? ICONS.logout : ICONS.login} />
-                <span>{account ? "로그아웃" : "로그인"}</span>
+                <Icon d={account ? ICONS.user : ICONS.login} />
+                <span>{account ? `${account.name}님` : "로그인"}</span>
               </button>
+              {account?.adminRole && (
+                <Link
+                  href="/admin"
+                  className="flex min-h-[56px] items-center gap-2.5 whitespace-nowrap rounded-[14px] border-[3px] border-info bg-bg px-5 font-bold !text-info no-underline hover:bg-info-tint max-[1100px]:flex-[1_1_150px] max-[1100px]:justify-center"
+                >
+                  <Icon d={ICONS.shield} />
+                  <span>관리자</span>
+                </Link>
+              )}
               <button
                 type="button"
                 onClick={() => setTts(!speech.enabled)}
                 aria-pressed={speech.enabled}
-                className="flex min-h-[56px] items-center gap-2.5 whitespace-nowrap px-2.5 font-bold text-info underline decoration-2 underline-offset-[5px] hover:text-info-light hover:decoration-[3px] max-[960px]:flex-[1_1_150px] max-[960px]:justify-center"
+                className="flex min-h-[56px] items-center gap-2.5 whitespace-nowrap px-2.5 font-bold text-info underline decoration-2 underline-offset-[5px] hover:text-info-light hover:decoration-[3px] max-[1100px]:flex-[1_1_150px] max-[1100px]:justify-center"
               >
                 <Icon d={speech.enabled ? ICONS.speaker : ICONS.speakerOff} />
                 <span>음성 안내: {speech.enabled ? "켜짐" : "꺼짐"}</span>
@@ -854,46 +988,76 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           </div>
         </header>
 
-        <div className="mx-auto box-border flex w-full max-w-[1180px] flex-1 items-start gap-12 px-4 pb-[72px] pt-11 max-[960px]:flex-col max-[960px]:items-stretch max-[960px]:gap-11 max-[960px]:pb-10 max-[960px]:pt-7">
-          {/* ── 본문 ── */}
-          <main id="main" className="flex min-w-0 flex-[999_1_520px] flex-col gap-[60px] max-[960px]:flex-none max-[960px]:gap-12">
-            <div className="flex flex-col gap-1">
-              <span className="text-[17px] font-bold text-accent">{modeLabel}</span>
-              <h1 ref={headingRef} tabIndex={-1} className="m-0 text-[44px] font-extrabold leading-tight tracking-[-0.5px] max-[960px]:text-[30px] max-[420px]:text-[26px]">
-                {headline}
-              </h1>
-            </div>
+        <main id="main" className="mx-auto box-border flex w-full max-w-[1280px] flex-1 flex-col gap-12 px-4 pb-[72px] pt-10 max-[960px]:gap-10 max-[960px]:pb-10 max-[960px]:pt-7">
+          {voiceArea}
 
-            <section aria-labelledby="last-said-title" className="flex flex-col gap-3.5">
-              <h2 id="last-said-title" className="m-0 text-[17px] font-bold text-ink-3">
-                방금 안내
-              </h2>
-              <p className="m-0 whitespace-pre-line rounded-2xl border-2 border-accent bg-panel p-5 text-[22px] leading-[1.55]">{lastSaid}</p>
-              <p className="m-0 text-[17px] text-ink-3">내가 한 말: {lastHeard ?? "아직 없음"}</p>
-              <button
-                type="button"
-                onClick={() => void speak(lastSaid, { rate: rateRef.current })}
-                className="self-start text-[18px] font-bold text-info underline decoration-2 underline-offset-[5px] hover:text-info-light"
-              >
-                방금 안내 다시 듣기
-              </button>
-            </section>
+          {!isHome && (
+            <nav aria-label="화면 이동" className="flex flex-wrap gap-3">
+              <Button tone="soft" icon={ICONS.back} block={false} onClick={() => handleBack()}>
+                이전 화면
+              </Button>
+              <Button tone="soft" icon={ICONS.home} block={false} onClick={() => handleHome()}>
+                {mode === "supply" ? "내 콘텐츠로" : "처음으로"}
+              </Button>
+            </nav>
+          )}
 
-            {!isHomeView && (
-              <nav aria-label="화면 이동" className="flex flex-col gap-3.5">
-                <Button tone="inverse" size="lg" icon={ICONS.back} className="!justify-start" onClick={() => handleBack()}>
-                  이전 화면으로
-                </Button>
-                <Button tone="line" size="lg" icon={ICONS.home} className="!justify-start" onClick={() => handleHome()}>
-                  {mode === "supply" ? "내 콘텐츠로" : "운동하기 홈으로"}
-                </Button>
-              </nav>
-            )}
+          {/* ── 시작 화면: 분류로 바로 찾기, 모든 운동 영상 ── */}
+          {isHome && (
+            <>
+              <section aria-labelledby="category-title" className="flex flex-col gap-4">
+                <h2 id="category-title" className="m-0 text-[24px] font-extrabold">
+                  분류로 찾기
+                </h2>
+                <div className="flex flex-wrap gap-3">
+                  {EXERCISE_CATEGORIES.map((c) => (
+                    <Button key={c} tone="line" block={false} onClick={() => goSearch(EXERCISE_CATEGORY_LABELS[c])} className="px-6">
+                      {EXERCISE_CATEGORY_LABELS[c]}
+                    </Button>
+                  ))}
+                </div>
+              </section>
 
-            {/* ── 운동 화면 ── */}
-            {routeExerciseId && exercise && (
-              <>
-                <section aria-label={`${exercise.title} 영상`} className="flex flex-col gap-3">
+              <Section id="videos-title" title={`모든 운동 영상 ${exercises ? `${all.length}개` : ""}`}>
+                {loadError ? (
+                  <>
+                    <p role="alert" className="m-0 text-ink-2">
+                      영상 목록을 불러오지 못했어요. {loadError}
+                    </p>
+                    <Button tone="soft" block={false} onClick={() => void loadExercises()}>
+                      다시 시도
+                    </Button>
+                  </>
+                ) : exercises === null ? (
+                  <p className="m-0 text-ink-2">영상 목록을 불러오는 중이에요.</p>
+                ) : all.length === 0 ? (
+                  <p className="m-0 text-ink-2">아직 공개된 운동 영상이 없어요.</p>
+                ) : (
+                  <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-x-5 gap-y-8 p-0">
+                    {all.map((e) => (
+                      <li key={e.id}>
+                        <VideoCard
+                          exercise={e}
+                          level={levelOf(e)}
+                          onOpen={() => {
+                            addMessage("me", `${e.title} 시작`);
+                            setLastHeard(`${e.title} 시작`);
+                            openExercise(e.id, true);
+                          }}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Section>
+            </>
+          )}
+
+          {/* ── 시청 화면: 왼쪽 영상·조작·단계, 오른쪽 다음 영상 ── */}
+          {routeExerciseId && exercise && (
+            <div className="flex items-start gap-8 max-[1100px]:flex-col max-[1100px]:items-stretch">
+              <div className="flex min-w-0 flex-1 flex-col gap-8">
+                <section aria-label={`${exercise.title} 영상`} className="flex flex-col gap-4">
                   {videoUrl ? (
                     // 영상의 소리와 음성 안내가 함께 나온다. 자막 파일은 아직 없다.
                     <video
@@ -911,31 +1075,34 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
                       <p className="m-0 text-[18px] text-ink-2">시작을 누르면 영상 없이 시간에 맞춰 단계 안내를 들려 드려요.</p>
                     </div>
                   )}
+                  <h1 ref={headingRef} tabIndex={-1} className="m-0 text-[34px] font-extrabold leading-tight max-[960px]:text-[28px]">
+                    {exercise.title}
+                  </h1>
                   <p className="m-0 text-[18px] text-ink-2">
-                    {EXERCISE_CATEGORY_LABELS[exercise.category]} · {DIFFICULTY_LABELS[exercise.difficulty]} · {formatDuration(exercise.video.durationSec)}
-                    {exercise.summary ? ` · ${exercise.summary}` : ""}
+                    {EXERCISE_CATEGORY_LABELS[exercise.category]} · {DIFFICULTY_LABELS[exercise.difficulty]} · {formatDuration(exercise.video.durationSec)} · {guideLevelLabel(exerciseLevel)} 안내
                   </p>
+                  {exercise.summary && <p className="m-0 rounded-2xl bg-panel px-5 py-4 text-[19px]">{exercise.summary}</p>}
                 </section>
 
                 <section aria-labelledby="control-title" className="flex flex-col gap-4">
                   <h2 id="control-title" className="m-0 text-[26px] font-extrabold">
-                    {exercise.title} · {session.segmentIndex + 1}/{exercise.segments.length}단계 {currentSegment?.title ?? ""}
+                    {session.segmentIndex + 1}/{exercise.segments.length}단계 {currentSegment?.title ?? ""}
                   </h2>
-                  <p className="m-0 text-[18px] text-ink-2">
-                    {guideLevelLabel(exerciseLevel)} 안내 · 지금 상태: {session.playing ? "안내 중" : SESSION_STATE_LABELS[session.state]}
-                  </p>
+                  <p className="m-0 text-[18px] text-ink-2">지금 상태: {session.playing ? "안내 중" : SESSION_STATE_LABELS[session.state]}</p>
                   <Button tone="primary" size="xl" icon={session.playing ? ICONS.pause : ICONS.play} onClick={togglePlay} className="!min-h-[84px] !text-[28px]">
                     {session.playing ? "멈춤" : session.started && session.state === "PAUSED" ? "계속" : "시작"}
                   </Button>
-                  <Button size="lg" icon={ICONS.next} onClick={session.next}>
-                    다음 단계
-                  </Button>
-                  <Button size="lg" icon={ICONS.repeat} onClick={session.repeat}>
-                    다시 듣기
-                  </Button>
-                  <Button size="lg" icon={ICONS.prev} onClick={session.previous}>
-                    이전 단계
-                  </Button>
+                  <div className="grid grid-cols-3 gap-3 max-[640px]:grid-cols-1">
+                    <Button size="lg" icon={ICONS.prev} onClick={session.previous}>
+                      이전 단계
+                    </Button>
+                    <Button size="lg" icon={ICONS.repeat} onClick={session.repeat}>
+                      다시 듣기
+                    </Button>
+                    <Button size="lg" icon={ICONS.next} onClick={session.next}>
+                      다음 단계
+                    </Button>
+                  </div>
                   {exercise.precautions.length > 0 && <Caution label="주의할 자세">{exercise.precautions.join(" ")}</Caution>}
                 </section>
 
@@ -959,182 +1126,48 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
                     })}
                   </ol>
                 </Section>
-              </>
-            )}
-
-            {exerciseMissing && (
-              <Section id="missing-title" title="운동을 찾을 수 없어요">
-                <p className="m-0 text-ink-2">공개가 끝났거나 주소가 잘못되었어요. 운동 목록에서 다시 골라 주세요.</p>
-              </Section>
-            )}
-
-            {/* ── 운동하기 홈 ── */}
-            {pathname === "/" && (
-              <>
-                {!account && (
-                  <InfoBox>
-                    <h2 className="m-0 text-[24px] font-extrabold">로그인 전입니다</h2>
-                    <p className="m-0 text-[18px] text-ink-2">
-                      운동 찾기와 안내 듣기는 지금도 쓸 수 있습니다. 로그인하면 배운 강의에 맞춘 간결한 안내와 콘텐츠 올리기를 쓸 수 있습니다.
-                    </p>
-                    <Button tone="info" size="lg" icon={ICONS.login} onClick={() => runIntent({ type: "ACCOUNT" })} className="!min-h-[72px] !text-[23px]">
-                      로그인하기
-                    </Button>
-                  </InfoBox>
-                )}
-
-                <Section id="list-title" title={view.name === "list" ? `${listLabel(view)} 운동` : "할 수 있는 운동"}>
-                  {loadError ? (
-                    <>
-                      <p role="alert" className="m-0 text-ink-2">
-                        운동 목록을 불러오지 못했어요. {loadError}
-                      </p>
-                      <Button tone="soft" onClick={() => void loadExercises()}>
-                        다시 시도
-                      </Button>
-                    </>
-                  ) : exercises === null ? (
-                    <p className="m-0 text-ink-2">운동 목록을 불러오는 중이에요.</p>
-                  ) : list.length === 0 ? (
-                    <p className="m-0 text-ink-2">해당하는 운동이 없어요.</p>
-                  ) : (
-                    <ul className="m-0 flex list-none flex-col gap-3.5 p-0">
-                      {list.map((e) => (
-                        <li key={e.id}>
-                          <ListButton
-                            icon={ICONS.exercise}
-                            title={e.title}
-                            sub={`${EXERCISE_CATEGORY_LABELS[e.category]}, ${formatDuration(e.video.durationSec)}, ${DIFFICULTY_LABELS[e.difficulty]}, ${guideLevelLabel(levelOf(e))} 안내`}
-                            onClick={() => {
-                              addMessage("me", `${e.title} 시작`);
-                              setLastHeard(`${e.title} 시작`);
-                              openExercise(e.id, true);
-                            }}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </Section>
-              </>
-            )}
-
-            {/* ── 다른 페이지 (내 계정, 내 강의, 내 콘텐츠 …) ── */}
-            {!shellRoute && children}
-
-            <Section id="menu-title" title="메뉴">
-              {menu.map((m) => {
-                const current = m.path !== "" && pathname === m.path;
-                return (
-                  <ListButton
-                    key={m.label}
-                    icon={m.icon}
-                    title={m.label}
-                    mark={current ? " (지금 화면)" : ""}
-                    sub={m.sub}
-                    current={current}
-                    onClick={m.go}
-                  />
-                );
-              })}
-              {account?.adminRole && (
-                <Link
-                  href="/admin"
-                  className="flex min-h-[72px] items-center gap-3 rounded-2xl border-[3px] border-info bg-bg px-[18px] text-[22px] font-bold !text-info no-underline hover:bg-info-tint"
-                >
-                  <Icon d={ICONS.shield} size={26} />
-                  <span>관리자 페이지 (검수·승인)</span>
-                </Link>
-              )}
-            </Section>
-          </main>
-
-          {/* ── 음성 패널 ── */}
-          <aside
-            id="voice"
-            aria-labelledby="voice-title"
-            className="flex min-w-0 flex-[1_1_340px] flex-col gap-10 rounded-3xl border-2 border-line bg-panel p-7 max-[960px]:flex-none max-[960px]:gap-11 max-[960px]:border-0 max-[960px]:bg-transparent max-[960px]:p-0"
-          >
-            <div className="flex flex-col gap-4 max-[960px]:fixed max-[960px]:inset-x-0 max-[960px]:bottom-0 max-[960px]:z-10 max-[960px]:gap-2 max-[960px]:border-t-2 max-[960px]:border-line max-[960px]:bg-panel max-[960px]:px-4 max-[960px]:pb-4 max-[960px]:pt-2.5">
-              <h2 id="voice-title" className="m-0 text-[22px] font-extrabold max-[960px]:sr-only">
-                말로 하기
-              </h2>
-              {showTtsControl && (
-                <button
-                  type="button"
-                  onClick={toggleTtsPause}
-                  aria-pressed={speech.paused}
-                  className="hidden min-h-[60px] w-full items-center justify-center gap-2.5 rounded-2xl border-[3px] border-info bg-bg text-[21px] font-extrabold text-info max-[960px]:flex"
-                >
-                  <Icon d={speech.paused ? ICONS.play : ICONS.pause} size={22} />
-                  <span>{ttsPauseLabel}</span>
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={toggleListening}
-                aria-pressed={listening}
-                className={`flex min-h-[128px] w-full items-center justify-center gap-4 rounded-3xl border-4 border-accent text-[28px] font-extrabold max-[960px]:min-h-[96px] max-[960px]:text-[24px] ${
-                  listening ? "bg-accent text-bg hover:bg-accent-hover" : "bg-bg text-accent hover:bg-accent-tint"
-                }`}
-              >
-                <MicIcon />
-                <span>{listening ? "듣는 중 · 눌러서 끄기" : "눌러서 말하기"}</span>
-              </button>
-              <p role="status" className="m-0 text-[17px] text-ink-2 max-[960px]:text-center max-[960px]:text-[16px]">
-                {thinking ? "답을 생각하고 있어요…" : voiceStatus}
-              </p>
-            </div>
-
-            <section aria-labelledby="say-title" className="flex flex-col gap-3.5">
-              <h3 id="say-title" className="m-0 text-[19px] font-extrabold">
-                이렇게 말해 보세요
-              </h3>
-              {chips.map((c) => (
-                <Button key={c} tone="soft" icon={ICONS.chat} className="!justify-start" onClick={() => handleCommand(c)}>
-                  “{c}”
-                </Button>
-              ))}
-            </section>
-
-            <section aria-labelledby="rate-title" className="flex flex-col gap-3.5">
-              <h3 id="rate-title" className="m-0 text-[19px] font-extrabold">
-                말 속도 {rate.toFixed(2)}배
-              </h3>
-              <div className="flex gap-3">
-                <Button tone="soft" onClick={() => changeRate(-RATE_STEP)}>
-                  느리게
-                </Button>
-                <Button tone="soft" onClick={() => changeRate(RATE_STEP)}>
-                  빠르게
-                </Button>
               </div>
-            </section>
 
-            <form onSubmit={submitCommand} className="flex flex-col gap-3.5">
-              <label htmlFor="command" className="text-[19px] font-extrabold">
-                말 대신 글로 입력
-              </label>
-              <input
-                id="command"
-                type="text"
-                value={command}
-                onChange={(e) => setCommand(e.target.value)}
-                placeholder="예: 다음"
-                autoComplete="off"
-                className={INPUT_CLASS}
-              />
-              <Button type="submit" tone="inverse" icon={ICONS.send}>
-                보내기
-              </Button>
-            </form>
-          </aside>
-        </div>
+              <aside aria-labelledby="next-title" className="flex w-[400px] flex-none flex-col gap-3 max-[1100px]:w-full">
+                <h2 id="next-title" className="m-0 text-[24px] font-extrabold">
+                  다음 영상
+                </h2>
+                {others.length === 0 ? (
+                  <p className="m-0 text-ink-2">다른 영상이 없어요.</p>
+                ) : (
+                  <ul className="m-0 flex list-none flex-col gap-2 p-0">
+                    {others.map((e) => (
+                      <li key={e.id}>
+                        <VideoRow exercise={e} level={levelOf(e)} compact onOpen={() => openExercise(e.id, true)} />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </aside>
+            </div>
+          )}
+
+          {exerciseMissing && (
+            <Section id="missing-title" title="영상을 찾을 수 없어요">
+              <p className="m-0 text-ink-2">공개가 끝났거나 주소가 잘못되었어요. 처음 화면에서 다시 찾아 주세요.</p>
+            </Section>
+          )}
+
+          {/* ── 다른 페이지 (검색 결과, 내 계정, 내 강의, 내 콘텐츠 …) ── */}
+          {!shellRoute && (
+            <>
+              <h1 ref={headingRef} tabIndex={-1} className="m-0 text-[40px] font-extrabold leading-tight tracking-[-0.5px] max-[960px]:text-[28px]">
+                {pageHeadline}
+              </h1>
+              {children}
+            </>
+          )}
+        </main>
 
         {/* ── 음성 읽기 조작 (넓은 화면, 읽는 동안 화면 아래에 붙는다) ── */}
         {showTtsControl && (
           <div role="region" aria-label="음성 읽기 조작" className="sticky bottom-0 border-t-[3px] border-info bg-panel px-4 py-3 max-[960px]:hidden">
-            <div className="mx-auto flex max-w-[1180px] flex-wrap items-center gap-x-5 gap-y-3">
+            <div className="mx-auto flex max-w-[1280px] flex-wrap items-center gap-x-5 gap-y-3">
               <span className="min-w-0 flex-[1_1_240px] text-[18px] text-ink-2">{ttsStatus}</span>
               <button
                 type="button"
@@ -1149,14 +1182,34 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           </div>
         )}
 
-        <footer className="border-t-2 border-line px-4 py-5 text-base text-ink-3 max-[960px]:pb-[250px]">
-          <div className="mx-auto flex max-w-[1180px] flex-wrap justify-between gap-x-6 gap-y-2">
+        <footer className="border-t-2 border-line px-4 py-5 text-base text-ink-3 max-[960px]:pb-[200px]">
+          <div className="mx-auto flex max-w-[1280px] flex-wrap justify-between gap-x-6 gap-y-2">
             <span>소리벗 · 와이코닉</span>
             <span>모든 음성 안내는 올린 사람이 확인하고 운영자가 검수한 뒤에만 공개됩니다.</span>
           </div>
         </footer>
       </div>
     </ShellContext.Provider>
+  );
+}
+
+/** 마이크를 아직 쓸 수 없을 때 본문 위쪽에 보여 주는 안내 */
+function MicPermissionCard({ state, onRequest }: { state: MicPermission; onRequest: () => void }) {
+  const text = micPermissionText(state);
+  return (
+    <section aria-labelledby="mic-permission-title" className="flex flex-col gap-4 rounded-[20px] border-2 border-info bg-panel p-6 text-left">
+      <h2 id="mic-permission-title" className="m-0 text-[24px] font-extrabold">
+        마이크 사용 허용
+      </h2>
+      <p className="m-0 text-[18px] text-ink-2">
+        <span className="font-bold text-ink">마이크 권한: {text.label}.</span> {text.help}
+      </p>
+      {text.canRequest && (
+        <Button tone="info" size="lg" icon={ICONS.check} onClick={onRequest} className="!min-h-[72px] !text-[23px]">
+          {state === "denied" ? "다시 확인하기" : "마이크 사용 허용하기"}
+        </Button>
+      )}
+    </section>
   );
 }
 

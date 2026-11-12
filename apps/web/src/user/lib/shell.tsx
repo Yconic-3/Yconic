@@ -1,7 +1,8 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef } from "react";
-import type { CourseId } from "@yconic/shared-types";
+import type { CourseId, GuideLevel } from "@yconic/shared-types";
+import type { PublishedExercise } from "./api";
 import type { SignedInAccount } from "@/lib/auth";
 
 /**
@@ -35,6 +36,14 @@ export interface ShellApi {
   /** '방금 안내'에 남기고 소리 내어 읽는다. 끝까지 읽으면 true */
   say(text: string, audioUrl?: string | null): Promise<boolean>;
   setPage(info: PageInfo | null): void;
+  /** 공개 운동 영상 전체. 불러오기 전에는 null */
+  exercises: PublishedExercise[] | null;
+  /** 이 운동을 짧게(배운 동작) 또는 자세하게 안내하는지 */
+  levelOf(e: Pick<PublishedExercise, "category" | "tags">): GuideLevel;
+  /** 시청 화면으로 간다. autoplay면 안내를 바로 시작한다 */
+  openExercise(id: string, autoplay: boolean): void;
+  /** 다음 화면이 스스로 안내를 읽어도 되는지 (에이전트가 이미 말했으면 false). 한 번 읽으면 다시 true */
+  shouldAnnounce(): boolean;
   setPageCommands(handler: PageCommandHandler | null): void;
 }
 

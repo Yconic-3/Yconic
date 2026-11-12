@@ -13,38 +13,25 @@
 
 ## 실행
 
-웹앱은 기본으로 백엔드 API(`apps/api`)의 데이터를 쓴다. 데이터베이스와 API를 먼저 켠다 (`apps/api/README.md`).
+처음 한 번만 설치한다.
 
 ```bash
 pnpm install
 ```
 
-```bash
-pnpm db:start
-```
-
-아래는 다른 터미널에서 (처음 한 번만 `pnpm db:setup`):
+그다음은 **명령 하나로 전부 켠다** (데이터베이스, API, AI 에이전트, 웹앱). Windows에서는 저장소 맨 위의 `실행하기.cmd`를 더블클릭해도 된다.
 
 ```bash
-pnpm db:setup
+pnpm dev
 ```
 
-```bash
-pnpm dev:api
-```
-
-```bash
-pnpm dev:web
-```
-
-사용자 화면에서 자연스러운 말을 AI로 알아듣게 하려면 사용자 AI 에이전트도 켠다 (선택, `apps/user-agent/README.md`).
-켜지 않거나 API 키가 없으면 정해진 말을 규칙으로 해석한다. 에이전트 주소는 `NEXT_PUBLIC_AGENT_URL` (기본 http://localhost:4100).
-
-```bash
-pnpm dev:agent
-```
+- 데이터베이스를 켤 때 테이블 변경(마이그레이션)을 자동으로 반영하고, 처음 만든 DB에는 예시 데이터를 넣는다.
+- API는 DB가 켜질 때까지 기다렸다가 시작한다.
+- 끄려면 그 창에서 Ctrl+C를 누른다.
+- PowerShell에서 `pnpm`이 "스크립트를 실행할 수 없으므로…" 오류로 막히면 `pnpm.cmd dev`처럼 `.cmd`를 붙여 실행한다.
 
 http://localhost:3000 이 사용자 화면, http://localhost:3000/admin 이 관리자 화면이다.
+AI 에이전트를 켜려면 `apps/user-agent/.env`에 `ANTHROPIC_API_KEY`를 넣는다 (`apps/user-agent/README.md`). 키가 없으면 정해진 말을 규칙으로 해석한다.
 
 ## 데이터 소스: API 또는 모의 데이터
 

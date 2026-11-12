@@ -28,6 +28,8 @@
 
 - 설치: `pnpm install`
 - 전체 테스트: `pnpm test` / 타입 검사: `pnpm typecheck`
+- **전부 한 번에 켜기: `pnpm dev`** (DB·API·AI 에이전트·웹앱). Windows에서는 저장소 맨 위의 `실행하기.cmd`를 더블클릭해도 된다. DB를 켤 때 마이그레이션은 자동으로 반영되고, 처음 만든 DB에는 예시 데이터가 들어간다
+- PowerShell이 `pnpm`을 보안 오류로 막으면 `pnpm.cmd dev`처럼 `.cmd`를 붙여 실행한다
 - 데이터베이스: `pnpm db:start`(켜기, 창을 열어 둔다) → 처음 한 번 `pnpm db:setup`(테이블+예시 데이터). 예시 데이터로 되돌리기 `pnpm db:seed`
 - API 실행: `pnpm dev:api` → http://localhost:4000/health
 - 사용자 AI 에이전트 실행: `pnpm dev:agent` → http://localhost:4100/health (AI를 켜려면 `apps/user-agent/.env`에 `ANTHROPIC_API_KEY`)
