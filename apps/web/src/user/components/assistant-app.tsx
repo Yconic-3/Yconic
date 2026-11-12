@@ -702,7 +702,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
         ? `${listLabel(view)} 운동 목록`
         : "어떤 운동을 할까요?";
   const modeLabel = `${mode === "supply" ? "콘텐츠 올리기" : "운동하기"} · ${account ? `${account.name}님` : "로그인 전"}`;
-  const pageTitle = `${headline || "소리벗"} — 소리벗`;
+  const pageTitle = headline ? `${headline} — 소리벗` : "소리벗 — 말로 찾고, 듣고 따라 하는 운동";
 
   const chips =
     page?.chips ??

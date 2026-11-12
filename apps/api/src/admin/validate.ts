@@ -11,7 +11,9 @@ import {
   type ReanalyzeContentInput,
   type ReplaceContentVideoInput,
   type RequestTtsInput,
+  type SubmitMyContentInput,
   type UpdateExerciseContentInput,
+  type UpdateMyGuidesInput,
 } from "@yconic/shared-types";
 import { ApiError } from "../common/errors";
 
@@ -146,4 +148,25 @@ export function parseVideoMeta(body: Record<string, unknown>): { durationSec: nu
   const durationSec = n(body.durationSec, "영상 길이");
   if (!(durationSec > 0)) fail("영상 길이를 읽을 수 없습니다.");
   return { durationSec, width: Math.round(n(body.width ?? 0, "가로 크기")), height: Math.round(n(body.height ?? 0, "세로 크기")) };
+}
+
+// ── 회원 콘텐츠 올리기 (/me) ──
+
+export function parseUpdateMyGuides(body: unknown): UpdateMyGuidesInput {
+  const b = obj(body);
+  if (!Array.isArray(b.segments)) fail("segments는 목록이어야 합니다.");
+  if (b.segments.length > 200) fail("단계가 너무 많습니다.");
+  return {
+    expectedVersion: int(b.expectedVersion, "expectedVersion"),
+    segments: b.segments.map((s, i) => {
+      const o = obj(s, `${i + 1}단계`);
+      return { id: str(o.id, `${i + 1}단계 id`, { max: 100 }), voiceGuide: str(o.voiceGuide, `${i + 1}단계 음성 안내`, { max: 2000 }) };
+    }),
+  };
+}
+
+export function parseSubmitMy(body: unknown): SubmitMyContentInput {
+  const b = obj(body);
+  if (typeof b.confirmed !== "boolean") fail("confirmed는 참·거짓이어야 합니다.");
+  return { expectedVersion: int(b.expectedVersion, "expectedVersion"), confirmed: b.confirmed };
 }

@@ -10,3 +10,4 @@ export * from "./admin-api";
 export * from "./user-api";
 export * from "./auth";
 export * from "./agent";
+export * from "./creator-api";

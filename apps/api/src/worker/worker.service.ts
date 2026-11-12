@@ -127,7 +127,7 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private analysisInfo(result: VideoAnalysisResult, at: Date) {
-    return { provider: result.provider, model: result.model, analyzedAt: at.toISOString(), summary: result.summary };
+    return { provider: result.provider, model: result.model, analyzedAt: at.toISOString(), summary: result.summary, findings: result.findings };
   }
 
   private async createDraft(tx: Db, job: JobRow, result: VideoAnalysisResult, at: Date): Promise<string> {

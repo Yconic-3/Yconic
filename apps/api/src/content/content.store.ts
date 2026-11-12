@@ -128,7 +128,8 @@ export async function loadJobs(db: Db, config: ApiConfig, where?: SQL): Promise<
   return rows.map((j) => toJob(config, j, videoById.get(j.videoId)!));
 }
 
-export type Actor = Pick<AdminUser, "id" | "name" | "role">;
+/** 기록을 남기는 실행자. 일반 회원(콘텐츠를 올린 사람)은 role이 null */
+export type Actor = { id: string; name: string; role: AdminUser["role"] | null };
 
 /** AI 작업기(content-worker)가 남기는 기록의 실행자 */
 export const WORKER_ACTOR: Actor = { id: "content-worker", name: "content-worker", role: "EDITOR" };

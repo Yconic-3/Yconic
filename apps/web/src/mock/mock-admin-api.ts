@@ -55,6 +55,9 @@ const MAX_VIDEO_BYTES = 2 * 1024 * 1024 * 1024;
 
 const WORKER_ACTOR = { id: "content-worker", name: "content-worker", role: "EDITOR" as const };
 
+/** 모의 백엔드. 관리자 화면과 회원 콘텐츠 올리기(모의 모드)가 함께 쓴다 */
+export type MockBackend = AdminApi;
+
 export function isActiveJob(job: Pick<ContentJob, "status">): boolean {
   return job.status !== "COMPLETED" && job.status !== "FAILED";
 }
@@ -173,7 +176,7 @@ export function createMockAdminApi(opts: MockAdminApiOptions): AdminApi {
       precautions: result.suggestedPrecautions,
       video: job.video,
       segments: segmentsFromAnalysis(job, result),
-      analysis: { provider: result.provider, model: result.model, analyzedAt: at, summary: result.summary },
+      analysis: { provider: result.provider, model: result.model, analyzedAt: at, summary: result.summary, findings: result.findings },
       status: "DRAFT",
       aiGenerated: true,
       internalNote: noteParts.join("\n"),
@@ -225,7 +228,7 @@ export function createMockAdminApi(opts: MockAdminApiOptions): AdminApi {
             continue;
           }
           content.segments = segmentsFromAnalysis(job, result);
-          content.analysis = { provider: result.provider, model: result.model, analyzedAt: iso(t), summary: result.summary };
+          content.analysis = { provider: result.provider, model: result.model, analyzedAt: iso(t), summary: result.summary, findings: result.findings };
           content.aiGenerated = true;
           if (job.requestNote) content.internalNote = [content.internalNote, `다시 분석 요청 사항: ${job.requestNote}`].filter(Boolean).join("\n");
           content.updatedBy = job.requestedBy;

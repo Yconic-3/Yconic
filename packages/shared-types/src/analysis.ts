@@ -1,6 +1,17 @@
 import type { SegmentKind } from "./exercise";
 
 /**
+ * 영상에서 화면으로만 전달되고 음성(내레이션·안내)에는 없던 정보.
+ * 예: 동작 방향, 신체 위치, 읽히지 않은 화면 자막, 화면 타이머로만 나온 횟수.
+ * 콘텐츠를 올린 사람이 음성 안내에 이 내용을 넣었는지 확인할 때 쓴다.
+ */
+export interface AccessibilityFinding {
+  /** 예: "동작 방향", "신체 위치", "화면 자막", "속도·횟수" */
+  kind: string;
+  text: string;
+}
+
+/**
  * 영상 분석기가 돌려주는 결과. content-worker가 어떤 분석 기술을 쓰든 이 모양으로 돌려준다.
  * 관리자 웹은 이 결과를 콘텐츠 초안의 segments로 바꿔 보여 주고, 관리자가 고친다.
  */
@@ -27,6 +38,8 @@ export interface VideoAnalysisResult {
   segments: DetectedSegment[];
   /** 분석기가 관리자에게 알리고 싶은 점 (예: 화면이 어두움, 전신이 안 보임) */
   warnings: string[];
+  /** 화면에서만 전달되던 정보 */
+  findings: AccessibilityFinding[];
 }
 
 export interface VideoAnalysisInput {

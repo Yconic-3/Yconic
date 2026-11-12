@@ -191,7 +191,7 @@ export const contentJobs = pgTable(
 
 // ── 감사 로그 ──
 
-/** 모든 생성·수정·승인·공개 기록 (설계 문서 4장). 작업기도 쓰므로 실행자는 계정 참조를 걸지 않는다. */
+/** 모든 생성·수정·승인·공개 기록 (설계 문서 4장). 작업기도 쓰므로 실행자는 계정 참조를 걸지 않는다. 회원도 콘텐츠를 올린다 (docs/decisions/0007). */
 export const auditLogs = pgTable(
   "audit_logs",
   {
@@ -199,7 +199,8 @@ export const auditLogs = pgTable(
     action: auditAction("action").notNull(),
     actorId: text("actor_id").notNull(),
     actorName: text("actor_name").notNull(),
-    actorRole: adminRole("actor_role").notNull(),
+    /** 관리자 역할. 일반 회원(콘텐츠를 올린 사람)이면 비어 있다 */
+    actorRole: adminRole("actor_role"),
     targetType: auditTargetType("target_type").notNull(),
     targetId: text("target_id").notNull(),
     summary: text("summary").notNull(),

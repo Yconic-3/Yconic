@@ -4,6 +4,7 @@
  */
 import {
   DIFFICULTY_LABELS,
+  type AccessibilityFinding,
   EXERCISE_CATEGORY_LABELS,
   type DetectedSegment,
   type ExerciseCategory,
@@ -122,6 +123,34 @@ export const DEFAULT_PRECAUTIONS = [
   "넘어지지 않도록 주변에 부딪힐 물건이 없는 곳에서 하세요.",
 ];
 
+/**
+ * 분류마다 흔히 화면으로만 전달되는 정보. 모의 분석기는 영상을 보지 않으므로 분류에 맞는 예시를 돌려준다.
+ * 실제 분석기는 내레이션을 받아 적고 화면(자막, 타이머, 동작)과 비교해 찾는다.
+ */
+const FINDINGS: Record<ExerciseCategory, AccessibilityFinding[]> = {
+  STRETCHING: [
+    { kind: "동작 방향", text: "목을 기울이는 방향과 각도가 화면에만 나오고 내레이션은 \"옆으로 늘리세요\"뿐입니다." },
+    { kind: "속도·횟수", text: "자세를 유지하는 시간이 화면 타이머로만 표시됩니다." },
+  ],
+  STRENGTH: [
+    { kind: "신체 위치", text: "의자를 잡는 손의 위치와 발 간격이 음성에 없습니다." },
+    { kind: "화면 자막", text: "\"무릎이 발끝을 넘지 않게\" 자막이 읽히지 않았습니다." },
+    { kind: "속도·횟수", text: "내려갈 때와 올라올 때의 속도, 반복 횟수가 화면 숫자로만 나옵니다." },
+  ],
+  CARDIO: [
+    { kind: "동작 방향", text: "팔을 흔드는 방향과 높이가 화면에만 나옵니다." },
+    { kind: "속도·횟수", text: "걷는 빠르기가 화면의 박자 표시로만 전달됩니다." },
+  ],
+  BALANCE: [
+    { kind: "신체 위치", text: "지탱하는 손을 어디에 두는지 음성에 없습니다." },
+    { kind: "화면 자막", text: "\"흔들리면 바로 발을 내리세요\" 자막이 읽히지 않았습니다." },
+  ],
+  REHAB: [
+    { kind: "동작 방향", text: "발목을 돌리는 방향(바깥쪽, 안쪽)이 화면 화살표로만 나옵니다." },
+    { kind: "속도·횟수", text: "방향마다 돌리는 횟수가 화면 숫자로만 표시됩니다." },
+  ],
+};
+
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const r1 = (v: number) => Math.round(v * 10) / 10;
 
@@ -182,6 +211,7 @@ export function createMockAnalyzer(): VideoAnalyzer {
         suggestedPrecautions: [...DEFAULT_PRECAUTIONS],
         segments,
         warnings: ["모의 분석 결과입니다. 영상을 재생하면서 구간 시각과 안내문을 반드시 확인해 주세요."],
+        findings: FINDINGS[category].map((f) => ({ ...f })),
       };
     },
   };

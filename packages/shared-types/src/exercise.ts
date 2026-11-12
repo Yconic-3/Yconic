@@ -1,3 +1,4 @@
+import type { AccessibilityFinding } from "./analysis";
 import type { Id, ISODateString } from "./common";
 
 export const EXERCISE_CATEGORIES = ["STRETCHING", "STRENGTH", "CARDIO", "BALANCE", "REHAB"] as const;
@@ -102,6 +103,8 @@ export interface AnalysisInfo {
   model: string | null;
   analyzedAt: ISODateString;
   summary: string;
+  /** 화면에서만 전달되던 정보. 예전 분석 기록에는 없을 수 있다 */
+  findings?: AccessibilityFinding[];
 }
 
 /**
