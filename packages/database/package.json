@@ -13,6 +13,7 @@
     "./server": "./src/server.ts"
   },
   "scripts": {
+    "dev": "tsx scripts/db-start.ts",
     "db:start": "tsx scripts/db-start.ts",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
