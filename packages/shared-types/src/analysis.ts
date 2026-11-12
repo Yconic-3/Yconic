@@ -1,4 +1,5 @@
 import type { SegmentKind } from "./exercise";
+import type { MovementId } from "./movements";
 
 /**
  * 영상에서 화면으로만 전달되고 음성(내레이션·안내)에는 없던 정보.
@@ -26,6 +27,8 @@ export interface DetectedSegment {
   voiceGuide: string;
   /** 동작을 배운 사람에게 읽어 줄 짧은 안내 초안 */
   conciseGuide: string;
+  /** 이 단계의 동작 */
+  movements: MovementId[];
   repetitions: number | null;
   /** 분석기의 확신도 0~1. 낮으면 관리자가 더 꼼꼼히 봐야 한다. */
   confidence: number;
@@ -52,4 +55,6 @@ export interface VideoAnalysisInput {
   category: string;
   difficulty: string;
   requestNote: string;
+  /** 서버에 저장된 영상 파일 경로. 실제 분석기(장면·내레이션)는 이 파일을 읽는다. 파일이 없는 예시 영상은 null */
+  filePath?: string | null;
 }

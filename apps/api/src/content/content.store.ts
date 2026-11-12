@@ -1,5 +1,5 @@
 import { auditLogs, contentJobs, contents, segments, videos, type Database } from "@yconic/database";
-import type { AdminUser, AuditAction, AuditLog, ContentJob, ExerciseContent, ExerciseSegment, VideoAsset } from "@yconic/shared-types";
+import { isMovementId, type AdminUser, type AuditAction, type AuditLog, type ContentJob, type ExerciseContent, type ExerciseSegment, type VideoAsset } from "@yconic/shared-types";
 import { asc, desc, inArray, type SQL } from "drizzle-orm";
 import { newId } from "../common/ids";
 import type { ApiConfig } from "../config";
@@ -43,6 +43,7 @@ export function toSegment(s: SegmentRow): ExerciseSegment {
     instruction: s.instruction,
     voiceGuide: s.voiceGuide,
     conciseGuide: s.conciseGuide,
+    movements: s.movements.filter(isMovementId),
     repetitions: s.repetitions,
     tts: { status: s.ttsStatus, audioUrl: s.ttsAudioUrl, generatedForText: s.ttsGeneratedForText, failureReason: s.ttsFailureReason },
   };

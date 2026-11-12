@@ -1,16 +1,44 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Put, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import type { AuthAccount, ContentJob, MyContent, MyCourses, VideoAsset } from "@yconic/shared-types";
-import { parseCreateJob, parseMyCourses, parseSubmitMy, parseUpdateMyGuides, parseVideoMeta } from "../admin/validate";
+import type { AuthAccount, ContentJob, LearningProfile, MyContent, MyCourses, PersonalizedGuides, VideoAsset } from "@yconic/shared-types";
+import { parseCreateJob, parseMyCourses, parseRecordPractice, parseSetMovement, parseSubmitMy, parseUpdateMyGuides, parseVideoMeta } from "../admin/validate";
 import { AuthGuard, CurrentAccount } from "../auth/guards";
 import type { UploadedVideoFile } from "../content/content.ops";
+import { LearningService } from "./learning.service";
 import { MeService } from "./me.service";
 
 /** 회원 콘텐츠 올리기 API. 로그인만 하면 쓸 수 있다. 주소와 모양은 shared-types/creator-api.ts 에 적힌 대로다. */
 @Controller("me")
 @UseGuards(AuthGuard)
 export class MeController {
-  constructor(@Inject(MeService) private readonly me: MeService) {}
+  constructor(
+    @Inject(MeService) private readonly me: MeService,
+    @Inject(LearningService) private readonly learning: LearningService,
+  ) {}
+
+  // ── 학습 프로필과 맞춤 안내 (shared-types/movements.ts) ──
+
+  @Get("learning")
+  getLearning(@CurrentAccount() account: AuthAccount): Promise<LearningProfile> {
+    return this.learning.getProfile(account);
+  }
+
+  @Put("learning/movements/:movementId")
+  setMovement(@CurrentAccount() account: AuthAccount, @Param("movementId") movementId: string, @Body() body: unknown): Promise<LearningProfile> {
+    const input = parseSetMovement(movementId, body);
+    return this.learning.setMovement(account, input.movementId, input.known, input.terms);
+  }
+
+  @Post("learning/practice")
+  @HttpCode(200)
+  recordPractice(@CurrentAccount() account: AuthAccount, @Body() body: unknown): Promise<LearningProfile> {
+    return this.learning.recordPractice(account, parseRecordPractice(body).movementIds);
+  }
+
+  @Get("guides/:exerciseId")
+  getGuides(@CurrentAccount() account: AuthAccount, @Param("exerciseId") exerciseId: string): Promise<PersonalizedGuides> {
+    return this.learning.getGuides(account, exerciseId);
+  }
 
   @Get("courses")
   getCourses(@CurrentAccount() account: AuthAccount): Promise<MyCourses> {

@@ -1,10 +1,11 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
-import type { VideoAnalyzer } from "@yconic/content-analysis";
+import type { AnalysisStage, VideoAnalyzer } from "@yconic/content-analysis";
 import { contentJobs, contents, segments, videos, type Database } from "@yconic/database";
 import { EDITABLE_STATUSES, type ContentJobStatus, type VideoAnalysisResult } from "@yconic/shared-types";
 import { and, eq, lte, notInArray } from "drizzle-orm";
+import { join } from "node:path";
 import { newId } from "../common/ids";
-import type { ApiConfig } from "../config";
+import { videosDir, type ApiConfig } from "../config";
 import { WORKER_ACTOR, writeAudit, type Db } from "../content/content.store";
 import { ANALYZER, CONFIG, DB } from "../tokens";
 
@@ -18,14 +19,17 @@ type JobRow = typeof contentJobs.$inferSelect;
 
 /**
  * content-worker (설계 문서 7장). AI 제작 작업과 음성(TTS) 생성 요청을 처리한다.
- * 지금은 모의 분석기로 단계마다 일정 시간이 걸리는 것처럼 진행한다.
- * 실제 분석기·TTS가 붙으면 이 파일만 바꾸면 된다.
+ * - 모의 분석기: 바로 끝나므로 단계마다 일정 시간(jobStageMs)이 걸리는 것처럼 진행한다.
+ * - 실제 분석기(analyzer.slow, Claude 영상 분석): 몇 분 걸리므로 분석을 따로 돌리고, 분석기가 알려 주는
+ *   진행 단계를 작업 상태로 보여 준다. 분석하는 동안 DB 행을 잠그지 않는다.
  */
 @Injectable()
 export class WorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger("content-worker");
   private timer: NodeJS.Timeout | null = null;
   private running: Promise<void> | null = null;
+  /** 이 서버에서 지금 돌고 있는 실제 분석 (작업 ID → 끝날 때의 약속) */
+  private readonly analyzing = new Map<string, Promise<void>>();
 
   constructor(
     @Inject(DB) private readonly db: Database,
@@ -42,6 +46,13 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     await this.running;
+    await Promise.allSettled(this.analyzing.values());
+  }
+
+  /** 실제 분석이 모두 끝날 때까지 기다린다 (테스트용) */
+  async idle(): Promise<void> {
+    await this.running;
+    await Promise.allSettled(this.analyzing.values());
   }
 
   /** 할 일을 한 번 처리한다. 앞 처리가 끝나지 않았으면 그 처리를 기다린다. */
@@ -56,7 +67,10 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
 
   private async process(now: number) {
     const active = await this.db.select({ id: contentJobs.id }).from(contentJobs).where(notInArray(contentJobs.status, [...FINISHED]));
-    for (const { id } of active) await this.advanceJob(id, now);
+    for (const { id } of active) {
+      if (this.analyzer.slow) this.startSlowJob(id);
+      else await this.advanceJob(id, now);
+    }
     await this.finishTts(now);
   }
 
@@ -82,15 +96,7 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      const [video] = await tx.select().from(videos).where(eq(videos.id, job.videoId));
-      const result = await this.analyzer.analyze({
-        videoId: job.videoId,
-        durationSec: video?.durationSec ?? 0,
-        title: job.title,
-        category: job.category,
-        difficulty: job.difficulty,
-        requestNote: job.requestNote,
-      });
+      const result = await this.analyzer.analyze(await this.analysisInput(tx, job));
 
       if (job.kind === "REANALYZE") {
         const ok = await this.applyReanalysis(tx, job, result, at);
@@ -106,7 +112,79 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  /** 분석기에 넘길 영상 정보 (실제 분석기는 저장된 파일을 읽는다) */
+  private async analysisInput(db: Db, job: JobRow) {
+    const [video] = await db.select().from(videos).where(eq(videos.id, job.videoId));
+    return {
+      videoId: job.videoId,
+      durationSec: video?.durationSec ?? 0,
+      title: job.title,
+      category: job.category,
+      difficulty: job.difficulty,
+      requestNote: job.requestNote,
+      filePath: video?.storageKey ? join(videosDir(this.config), video.storageKey) : null,
+    };
+  }
+
+  /**
+   * 실제 분석기로 작업 하나를 처리한다. 이미 이 서버에서 돌고 있으면 아무것도 하지 않는다.
+   * 서버가 다시 켜지면 끝나지 않은 작업을 처음부터 다시 분석한다.
+   */
+  private startSlowJob(id: string) {
+    if (this.analyzing.has(id)) return;
+    const run = this.runSlowJob(id)
+      .catch((e) => this.log.error(e instanceof Error ? e.stack : String(e)))
+      .finally(() => this.analyzing.delete(id));
+    this.analyzing.set(id, run);
+  }
+
+  private async runSlowJob(id: string) {
+    const [job] = await this.db.select().from(contentJobs).where(eq(contentJobs.id, id));
+    if (!job || (FINISHED as readonly string[]).includes(job.status)) return;
+    const setStage = async (status: AnalysisStage | "QUEUED", progress: number) => {
+      await this.db
+        .update(contentJobs)
+        .set({ status, progress, updatedAt: new Date() })
+        .where(and(eq(contentJobs.id, id), notInArray(contentJobs.status, [...FINISHED])));
+    };
+    const fail = async (reason: string) => {
+      await this.db.update(contentJobs).set({ status: "FAILED", failureReason: reason, updatedAt: new Date() }).where(eq(contentJobs.id, id));
+    };
+
+    await setStage("ANALYZING_VIDEO", 5);
+    let result: VideoAnalysisResult;
+    try {
+      const input = await this.analysisInput(this.db, job);
+      result = await this.analyzer.analyze(input, (stage, progress, message) => {
+        this.log.log(`[${id}] ${message}`);
+        void setStage(stage, progress);
+      });
+    } catch (e) {
+      await fail(e instanceof Error ? e.message : "영상 분석에 실패했습니다.");
+      return;
+    }
+
+    await this.db.transaction(async (tx) => {
+      const [locked] = await tx.select().from(contentJobs).where(eq(contentJobs.id, id)).for("update");
+      if (!locked || (FINISHED as readonly string[]).includes(locked.status)) return;
+      const at = new Date();
+      if (locked.kind === "REANALYZE") {
+        if (!(await this.applyReanalysis(tx, locked, result, at))) {
+          await tx.update(contentJobs).set({ status: "FAILED", progress: 90, failureReason: REANALYZE_BLOCKED, updatedAt: at }).where(eq(contentJobs.id, id));
+          return;
+        }
+      } else {
+        const contentId = await this.createDraft(tx, locked, result, at);
+        await tx.update(contentJobs).set({ contentId }).where(eq(contentJobs.id, id));
+      }
+      await tx.update(contentJobs).set({ status: "COMPLETED", progress: 100, completedAt: at, updatedAt: at }).where(eq(contentJobs.id, id));
+    });
+  }
+
   private segmentRows(job: JobRow, contentId: string, result: VideoAnalysisResult, at: Date): (typeof segments.$inferInsert)[] {
+    // 모의 분석기는 음성 파일까지 만든 것처럼 표시한다. 실제 분석기는 아직 음성 파일을 만들지 않으므로
+    // 사용자 기기가 안내문을 읽는다 (관리자 화면에서 음성 생성을 요청할 수 있다).
+    const mockTts = !this.analyzer.slow;
     return result.segments.map((s, i) => ({
       id: newId("s"),
       contentId,
@@ -118,12 +196,11 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
       instruction: s.instruction,
       voiceGuide: s.voiceGuide,
       conciseGuide: s.conciseGuide,
+      movements: s.movements,
       repetitions: s.repetitions,
-      // content-worker가 구간별 음성까지 만든다 (모의 음성 주소)
-      ttsStatus: "READY",
-      ttsAudioUrl: `mock://tts/${job.id}/${i + 1}`,
-      ttsGeneratedForText: s.voiceGuide,
-      ttsRequestedAt: at,
+      ...(mockTts
+        ? { ttsStatus: "READY" as const, ttsAudioUrl: `mock://tts/${job.id}/${i + 1}`, ttsGeneratedForText: s.voiceGuide, ttsRequestedAt: at }
+        : { ttsStatus: "NONE" as const }),
     }));
   }
 

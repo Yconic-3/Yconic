@@ -12,6 +12,9 @@
 erDiagram
     accounts ||--o{ auth_sessions : "로그인 유지"
     accounts ||--o{ account_courses : "내 강의"
+    accounts ||--o{ account_movements : "내 동작"
+    accounts ||--o{ personalized_guides : "맞춤 안내"
+    contents ||--o{ personalized_guides : "맞춤 안내"
     accounts ||--o{ videos : "올림"
     accounts ||--o{ contents : "만듦·검수 요청·수정"
     accounts ||--o{ content_jobs : "요청"
@@ -30,6 +33,20 @@ erDiagram
     account_courses {
         text account_id PK
         text course_id PK "lower, core, upper, stretch"
+    }
+    account_movements {
+        text account_id PK
+        text movement_id PK "squat, pushup ..."
+        boolean declared "직접 알림"
+        int practice_count "끝까지 따라 한 횟수"
+        text terms "배운 용어"
+    }
+    personalized_guides {
+        text account_id PK
+        text content_id PK
+        text profile_key "프로필이 바뀌면 다시 만든다"
+        jsonb guides
+        text generated_by "ai, rule"
     }
     auth_sessions {
         text token_hash PK
@@ -96,10 +113,12 @@ erDiagram
 | --- | --- | --- |
 | `accounts` | 로그인 계정. 관리자는 `admin_role`(조회자·편집자·승인권자·최고 관리자)이 있고, 일반 회원은 비어 있다 | 로그인, 머리말의 이름, 관리자 권한 검사 |
 | `account_courses` | 회원이 강사에게 배운 강의 (내 강의). 배운 강의의 운동은 짧게 안내한다 | 내 강의, 운동 화면의 안내 수준 |
+| `account_movements` | 회원이 아는 동작: 직접 알렸는지, 끝까지 따라 한 횟수, 강사에게 배운 용어 (0008) | 내 동작, 맞춤 안내 |
+| `personalized_guides` | AI가 회원 한 사람에 맞게 다시 쓴 단계별 안내 저장본. 학습 프로필이 바뀌면 다시 만든다 | 운동 화면의 맞춤 안내 |
 | `auth_sessions` | 로그인 유지 토큰의 해시와 만료 시각 | 모든 로그인 상태 확인 |
 | `videos` | 올린 영상의 정보(파일 이름, 길이, 해상도, 크기)와 저장소 위치 | 관리자·회원 영상 올리기, 관리자 영상 교체, 사용자 운동 화면의 영상 |
 | `contents` | 운동 콘텐츠: 제목, 요약, 분류, 난이도, 태그, 주의사항, 상태, 검수 의견, 내부 메모, 버전 | 관리자 목록·편집·검수, 사용자 운동 목록 |
-| `segments` | 콘텐츠의 구간: 순서, 종류, 시작·끝 시각, 동작 설명, 자세한 음성 안내문과 짧은 안내문, 음성 파일 상태 | 관리자 타임라인·구간 편집, 사용자 단계 카드·음성 안내 |
+| `segments` | 콘텐츠의 구간: 순서, 종류, 시작·끝 시각, 동작 설명, 자세한 음성 안내문과 짧은 안내문, 동작(movements), 음성 파일 상태 | 관리자 타임라인·구간 편집, 사용자 단계 카드·음성 안내 |
 | `content_jobs` | AI 제작 작업: 종류(새 제작·다시 분석), 단계, 진행률, 실패 이유 | 관리자 AI 제작 작업, 대시보드 |
 | `audit_logs` | 누가 언제 무엇을 했는지 | 관리자 감사 로그, 콘텐츠 이력 |
 

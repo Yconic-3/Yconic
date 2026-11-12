@@ -21,7 +21,7 @@ export async function seedDatabase(db: Database, nowMs = Date.now()): Promise<vo
   );
 
   await db.transaction(async (tx) => {
-    await tx.execute(sql`truncate table audit_logs, content_jobs, segments, contents, videos, account_courses, auth_sessions, accounts restart identity cascade`);
+    await tx.execute(sql`truncate table audit_logs, content_jobs, segments, contents, videos, account_courses, account_movements, personalized_guides, auth_sessions, accounts restart identity cascade`);
 
     await tx.insert(accounts).values(accountRows);
 
@@ -78,6 +78,7 @@ export async function seedDatabase(db: Database, nowMs = Date.now()): Promise<vo
           instruction: s.instruction,
           voiceGuide: s.voiceGuide,
           conciseGuide: s.conciseGuide ?? "",
+          movements: s.movements ?? [],
           repetitions: s.repetitions,
           ttsStatus: s.tts.status,
           ttsAudioUrl: s.tts.audioUrl,

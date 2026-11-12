@@ -30,7 +30,11 @@
         "ANTHROPIC_API_KEY",
         "AI_MODEL",
         "AI_EFFORT",
-        "AGENT_RATE_LIMIT"
+        "AGENT_RATE_LIMIT",
+        "VIDEO_ANALYZER",
+        "FFMPEG",
+        "PYTHON",
+        "WHISPER_MODEL"
       ]
     },
     "lint": {},
