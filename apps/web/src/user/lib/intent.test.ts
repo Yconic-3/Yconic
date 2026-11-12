@@ -114,4 +114,13 @@ describe("parseIntent — 앱 전체 명령 (시안 D)", () => {
     // 강의라는 말이 없으면 운동 찾기다
     expect(parse("하체 운동 찾아줘")).toEqual({ type: "LIST", category: null, keyword: "하체" });
   });
+
+  it("동작 하나를 배웠다고 하면 내 동작에 기록하고, 모른다고 하면 뺀다", () => {
+    expect(parse("스쿼트 배웠어")).toEqual({ type: "MOVEMENT", movementId: "squat", known: true });
+    expect(parse("팔굽혀펴기 할 줄 알아")).toEqual({ type: "MOVEMENT", movementId: "pushup", known: true });
+    expect(parse("플랭크는 아직 몰라")).toEqual({ type: "MOVEMENT", movementId: "plank", known: false });
+    expect(parse("런지 안 배웠어")).toEqual({ type: "MOVEMENT", movementId: "lunge", known: false });
+    // 동작 이름이 없으면 강의로 본다
+    expect(parse("하체 강의 배웠어")).toEqual({ type: "COURSES", courseId: "lower", learned: true });
+  });
 });

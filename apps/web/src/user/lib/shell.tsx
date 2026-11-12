@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef } from "react";
-import type { CourseId, GuideLevel } from "@yconic/shared-types";
+import type { CourseId, GuideLevel, LearningProfile, MovementId } from "@yconic/shared-types";
 import type { PublishedExercise } from "./api";
 import type { SignedInAccount } from "@/lib/auth";
 
@@ -33,13 +33,17 @@ export interface ShellApi {
   learnedCourses: CourseId[] | null;
   /** 내 강의를 바꾼다 (저장까지) */
   setLearnedCourses(courseIds: CourseId[]): Promise<void>;
+  /** 내 동작(강의로 배운 동작, 직접 알린 동작, 여러 번 따라 한 동작). 로그인하지 않았으면 null */
+  learning: LearningProfile | null;
+  /** 동작 하나를 배웠다고(또는 아니라고) 기록한다. terms는 강사에게 배운 용어 */
+  setMovementKnown(id: MovementId, known: boolean, terms?: string): Promise<void>;
   /** '방금 안내'에 남기고 소리 내어 읽는다. 끝까지 읽으면 true */
   say(text: string, audioUrl?: string | null): Promise<boolean>;
   setPage(info: PageInfo | null): void;
   /** 공개 운동 영상 전체. 불러오기 전에는 null */
   exercises: PublishedExercise[] | null;
-  /** 이 운동을 짧게(배운 동작) 또는 자세하게 안내하는지 */
-  levelOf(e: Pick<PublishedExercise, "category" | "tags">): GuideLevel;
+  /** 이 운동을 짧게(영상 속 동작을 모두 배움) 또는 자세하게 안내하는지 */
+  levelOf(e: Pick<PublishedExercise, "segments">): GuideLevel;
   /** 시청 화면으로 간다. autoplay면 안내를 바로 시작한다 */
   openExercise(id: string, autoplay: boolean): void;
   /** 다음 화면이 스스로 안내를 읽어도 되는지 (에이전트가 이미 말했으면 false). 한 번 읽으면 다시 true */

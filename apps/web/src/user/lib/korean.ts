@@ -10,6 +10,11 @@ export function eulReul(word: string): string {
   return `${word}${hasFinalConsonant(word) ? "을" : "를"}`;
 }
 
+/** 은/는 */
+export function eunNeun(word: string): string {
+  return `${word}${hasFinalConsonant(word) ? "은" : "는"}`;
+}
+
 /** 으로/로 (받침이 없거나 ㄹ 받침이면 '로') */
 export function euroRo(word: string): string {
   const last = word.trim().slice(-1);

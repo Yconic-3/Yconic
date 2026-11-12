@@ -5,24 +5,28 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
 import {
   courseLabel,
-  courseOfExercise,
   DIFFICULTY_LABELS,
   EXERCISE_CATEGORIES,
   EXERCISE_CATEGORY_LABELS,
-  guideLevelFor,
   guideLevelLabel,
-  guideTextOf,
+  knowsMovement,
+  movementLabel,
   type AgentAction,
   type AgentChatResponse,
   type AgentTurn,
   type CourseId,
   type ExerciseSegment,
+  type LearningProfile,
+  type MovementId,
+  type PersonalizedGuides,
 } from "@yconic/shared-types";
 import { readSignedInAccount, signOut, type SignedInAccount } from "@/lib/auth";
 import { createDefaultAgentClient, handleLocally, splitAgentActions } from "@/user/lib/agent";
 import { createUserApi, errorMessage, type PublishedExercise } from "@/user/lib/api";
 import { createCoursesApi } from "@/user/lib/courses-api";
-import { eulReul, ieyo } from "@/user/lib/korean";
+import { createLearningApi, ruleGuide } from "@/user/lib/learning-api";
+import { exerciseGuideLevel, guideIntro, practicedMovements } from "@/user/lib/movement-guides";
+import { eulReul, eunNeun, ieyo } from "@/user/lib/korean";
 import { parseIntent, type Intent } from "@/user/lib/intent";
 import { HOME_VIEW, type View } from "@/user/lib/navigation";
 import { formatDuration, SESSION_STATE_LABELS } from "@/user/lib/player";
@@ -147,14 +151,39 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       cancelled = true;
     };
   }, [accountId, coursesApi]);
+  // 내 동작(학습 프로필): 강의로 배운 동작, 직접 알린 동작, 여러 번 따라 한 동작 (docs/decisions/0008)
+  const learningApi = useMemo(() => createLearningApi(), []);
+  const [learning, setLearning] = useState<LearningProfile | null>(null);
+  const reloadLearning = useCallback(async () => {
+    try {
+      setLearning(await learningApi.getProfile());
+    } catch {
+      setLearning({ movements: [] });
+    }
+  }, [learningApi]);
+  useEffect(() => {
+    if (!accountId) {
+      setLearning(null);
+      return;
+    }
+    void reloadLearning();
+  }, [accountId, reloadLearning]);
   const setLearnedCourses = useCallback(
     async (ids: CourseId[]) => {
       setLearned(await coursesApi.set(ids));
+      // 강의를 바꾸면 그 강의의 동작이 아는 동작에 들어가거나 빠진다
+      await reloadLearning();
     },
-    [coursesApi],
+    [coursesApi, reloadLearning],
   );
-  /** 이 운동을 짧게 안내할지 자세하게 안내할지 */
-  const levelOf = useCallback((e: Pick<PublishedExercise, "category" | "tags">) => guideLevelFor(e, accountId ? (learned ?? []) : null), [accountId, learned]);
+  const setMovementKnown = useCallback(
+    async (id: MovementId, known: boolean, terms?: string) => {
+      setLearning(await learningApi.setMovement(id, { known, ...(terms !== undefined ? { terms } : {}) }));
+    },
+    [learningApi],
+  );
+  /** 이 운동을 짧게 안내할지 자세하게 안내할지 (영상 속 동작을 모두 알면 짧게) */
+  const levelOf = useCallback((e: Pick<PublishedExercise, "segments">) => exerciseGuideLevel(e, accountId ? learning : null), [accountId, learning]);
 
   const [exercises, setExercises] = useState<PublishedExercise[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -262,12 +291,60 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
   );
 
   const exerciseLevel = exercise ? levelOf(exercise) : "detailed";
-  const guideOf = useCallback((s: ExerciseSegment) => guideTextOf(s, exerciseLevel), [exerciseLevel]);
+  const profileRef = useRef(learning);
+  profileRef.current = accountId ? learning : null;
+
+  // 맞춤 안내: 로그인했으면 서버(AI)가 이 사람에 맞게 다시 쓴 단계 안내를 받는다.
+  // 받기 전이나 받지 못하면 규칙(아는 동작이면 짧은 안내)으로 읽는다.
+  const [guides, setGuides] = useState<PersonalizedGuides | null>(null);
+  const [guidesLoading, setGuidesLoading] = useState(false);
+  const exerciseId = exercise?.id ?? null;
+  useEffect(() => {
+    setGuides(null);
+    if (!exercise || !accountId || !learning) return;
+    let cancelled = false;
+    setGuidesLoading(true);
+    learningApi
+      .getGuides(exercise)
+      .then((g) => !cancelled && setGuides(g))
+      .catch(() => undefined)
+      .finally(() => !cancelled && setGuidesLoading(false));
+    return () => {
+      cancelled = true;
+    };
+    // 운동이 바뀌거나 내 동작이 바뀌면 다시 받는다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exerciseId, accountId, learning, learningApi]);
+  const guideFor = useCallback(
+    (s: ExerciseSegment) => (guides?.exerciseId === exerciseId ? guides.segments.find((g) => g.segmentId === s.id) : undefined) ?? ruleGuide(s, accountId ? learning : null),
+    [accountId, exerciseId, guides, learning],
+  );
+  const guideOf = useCallback((s: ExerciseSegment) => guideFor(s).text, [guideFor]);
   const session = useExerciseSession(exercise, videoRef, say, guideOf);
   const sessionRef = useRef(session);
   sessionRef.current = session;
-  const levelRef = useRef(exerciseLevel);
-  levelRef.current = exerciseLevel;
+
+  // 끝까지 따라 하면 이 영상의 동작을 연습한 것으로 기록한다. 세 번이면 그 동작은 짧게 안내한다.
+  const reportedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (session.state !== "COMPLETED") {
+      reportedRef.current = null;
+      return;
+    }
+    if (!exercise || !accountId || reportedRef.current === exercise.id) return;
+    reportedRef.current = exercise.id;
+    const ids = practicedMovements(exercise);
+    if (ids.length === 0) return;
+    const before = learning;
+    learningApi
+      .recordPractice(ids)
+      .then((after) => {
+        setLearning(after);
+        const newlyKnown = ids.filter((id) => !knowsMovement(before, id) && knowsMovement(after, id));
+        if (newlyKnown.length) void say(`${eulReul(newlyKnown.map(movementLabel).join(", "))} 여러 번 따라 하셨어요. 다음부터는 짧게 안내할게요.`);
+      })
+      .catch(() => undefined);
+  }, [accountId, exercise, learning, learningApi, say, session.state]);
 
   // 운동을 고르면 영상 주소를 받아 오고, "○○ 시작"으로 들어왔으면 바로 시작한다.
   useEffect(() => {
@@ -292,12 +369,8 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
         if (autoplay) sessionRef.current.start();
         return;
       }
-      // 왜 짧게/자세하게 안내하는지 먼저 알린다 (내 강의)
-      const course = courseOfExercise(exercise);
-      const why =
-        levelRef.current === "concise" && course
-          ? `${courseLabel(course)} 강의를 들으셨으니 배운 용어로 짧게 안내할게요.`
-          : "처음 하는 동작이라 자세와 방향까지 자세히 안내할게요.";
+      // 왜 짧게/자세하게 안내하는지 먼저 알린다 (내 동작)
+      const why = guideIntro(exercise, profileRef.current);
       void say(`${eulReul(exercise.title)} 준비할게요. ${why}${autoplay ? " 바로 시작합니다." : ' "시작"이라고 말하면 1단계부터 안내합니다.'}`).then((finished) => {
         // 안내를 다 읽기 전에 사용자가 다른 말을 했으면 바로 시작하지 않는다
         if (!cancelled && autoplay && finished) sessionRef.current.start();
@@ -515,7 +588,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           return;
         case "COURSES": {
           if (!intent.courseId || !readSignedInAccount()) {
-            goTo("/courses", "내 강의 화면입니다. 강사에게 배운 강의를 고르면 그 동작은 짧게 안내합니다.");
+            goTo("/courses", "내 강의·동작 화면입니다. 배운 동작이나 강의를 고르면 어느 영상에서든 그 동작은 짧게 안내합니다.");
             return;
           }
           const id = intent.courseId;
@@ -530,6 +603,23 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
               ),
             )
             .catch((e: unknown) => say(`내 강의를 저장하지 못했어요. ${e instanceof Error ? e.message : ""}`));
+          return;
+        }
+        case "MOVEMENT": {
+          if (!readSignedInAccount()) {
+            void say("배운 동작을 기록하려면 먼저 로그인해 주세요. 내 계정이라고 말하면 로그인 화면으로 갑니다.");
+            return;
+          }
+          const name = movementLabel(intent.movementId);
+          void setMovementKnown(intent.movementId, intent.known)
+            .then(() =>
+              say(
+                intent.known
+                  ? `${eulReul(name)} 배운 동작으로 기록했어요. 어느 영상에서든 ${eunNeun(name)} 짧게 안내할게요.`
+                  : `${eulReul(name)} 배운 동작에서 뺐어요. ${eunNeun(name)} 자세하게 안내할게요.`,
+              ),
+            )
+            .catch((e: unknown) => say(`내 동작을 저장하지 못했어요. ${e instanceof Error ? e.message : ""}`));
           return;
         }
         case "LIST":
@@ -589,7 +679,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           return;
       }
     },
-    [askMicPermission, changeRate, exercise, exercises, goSearch, goTo, handleBack, handleHome, handleLogout, learned, mode, openExercise, say, setLearnedCourses, setTts, toggleTtsPause],
+    [askMicPermission, changeRate, exercise, exercises, goSearch, goTo, handleBack, handleHome, handleLogout, learned, mode, openExercise, say, setLearnedCourses, setMovementKnown, setTts, toggleTtsPause],
   );
 
   /** 에이전트가 돌려준 할 일 하나를 말 없이 실행한다. 말은 에이전트의 답이 대신한다 */
@@ -784,6 +874,8 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       refreshAccount,
       learnedCourses: accountId ? learned : null,
       setLearnedCourses,
+      learning: accountId ? learning : null,
+      setMovementKnown,
       say,
       setPage,
       setPageCommands: (handler) => {
@@ -798,7 +890,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
         return !quiet;
       },
     }),
-    [account, accountId, exercises, learned, levelOf, openExercise, refreshAccount, say, setLearnedCourses],
+    [account, accountId, exercises, learned, learning, levelOf, openExercise, refreshAccount, say, setLearnedCourses, setMovementKnown],
   );
 
   // ── 화면에 쓸 값 ──
@@ -955,7 +1047,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
                 콘텐츠 올리기
               </HeaderTab>
               <HeaderTab current={pathname === "/courses"} icon={ICONS.book} onClick={() => runIntent({ type: "COURSES", courseId: null, learned: true })}>
-                내 강의
+                내 동작
               </HeaderTab>
               <button
                 type="button"
@@ -1081,6 +1173,15 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
                   <p className="m-0 text-[18px] text-ink-2">
                     {EXERCISE_CATEGORY_LABELS[exercise.category]} · {DIFFICULTY_LABELS[exercise.difficulty]} · {formatDuration(exercise.video.durationSec)} · {guideLevelLabel(exerciseLevel)} 안내
                   </p>
+                  {accountId && (
+                    <p className="m-0 text-[18px] font-bold text-info-light" aria-live="polite">
+                      {guidesLoading
+                        ? "AI가 내 동작에 맞춘 안내를 만들고 있어요. 그동안은 기본 안내로 읽어요."
+                        : guides?.generatedBy === "ai"
+                          ? "AI 맞춤 안내: 배운 동작은 배운 말로 짧게, 처음 하는 동작은 자세히 읽어요."
+                          : "내 동작에 맞춰 안내해요. 배운 동작은 짧게, 처음 하는 동작은 자세히 읽어요."}
+                    </p>
+                  )}
                   {exercise.summary && <p className="m-0 rounded-2xl bg-panel px-5 py-4 text-[19px]">{exercise.summary}</p>}
                 </section>
 
@@ -1110,13 +1211,14 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
                   <ol className="m-0 flex list-none flex-col gap-3.5 p-0">
                     {exercise.segments.map((seg, i) => {
                       const current = i === session.segmentIndex;
+                      const g = guideFor(seg);
                       return (
                         <li key={seg.id}>
                           <ListButton
                             icon={current ? ICONS.speaker : ICONS.dot}
                             title={`${i + 1}단계. ${seg.title}`}
                             mark={current ? " (지금)" : ""}
-                            sub={guideOf(seg) || "이 단계에는 음성 안내가 없어요."}
+                            sub={`${g.reason ? `[${g.reason}] ` : ""}${g.text || "이 단계에는 음성 안내가 없어요."}`}
                             current={current}
                             currentKind="step"
                             onClick={() => session.goToSegment(i)}
