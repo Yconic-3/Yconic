@@ -13,6 +13,7 @@ import {
   SEGMENT_KINDS,
   TTS_STATUSES,
   type AnalysisInfo,
+  type NarrationLine,
   type PersonalizedSegmentGuide,
 } from "@yconic/shared-types";
 import { sql } from "drizzle-orm";
@@ -205,6 +206,8 @@ export const segments = pgTable(
     conciseGuide: text("concise_guide").notNull().default(""),
     /** 이 단계의 동작 (shared-types MOVEMENT_IDS). 사용자가 아는 동작이면 짧게 안내한다 (docs/decisions/0008) */
     movements: text("movements").array().notNull().default(sql`'{}'::text[]`),
+    /** 이 단계에서 영상 속 강사가 말한 것 (받아쓰기). 음성 안내를 켜면 이 시간에 영상 소리를 끈다 (docs/decisions/0009) */
+    narration: jsonb("narration").$type<NarrationLine[]>().notNull().default(sql`'[]'::jsonb`),
     repetitions: integer("repetitions"),
     // 음성 파일(TTS). 서버가 관리하며, 화면에서 보낸 값으로 바꾸지 않는다.
     ttsStatus: ttsStatus("tts_status").notNull().default("NONE"),

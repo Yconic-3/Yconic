@@ -70,6 +70,13 @@ export const SEGMENT_KIND_LABELS: Record<SegmentKind, string> = {
   OUTRO: "마무리",
 };
 
+/** 영상 속 강사가 말한 한 줄 (받아쓰기). 시각은 영상 기준 초 */
+export interface NarrationLine {
+  startSec: number;
+  endSec: number;
+  text: string;
+}
+
 /**
  * 영상 타임라인 위의 한 구간.
  * 사용자 앱은 영상을 재생하다가 구간이 시작되는 시각에 voiceGuide 음성을 들려준다.
@@ -95,6 +102,11 @@ export interface ExerciseSegment {
   conciseGuide?: string;
   /** 이 단계의 동작 (AI 분석기가 붙인다). 사용자가 아는 동작이면 어느 영상에서든 짧게 안내한다 (movements.ts) */
   movements?: MovementId[];
+  /**
+   * 이 단계에서 영상 속 강사가 말한 것 (AI 분석기가 받아 적는다). 말이 없는 영상이면 비어 있다.
+   * 음성 안내를 켜면 이 시간에는 영상 소리를 끄고 앱의 안내가 대신 말한다 (narration.ts, docs/decisions/0009)
+   */
+  narration?: NarrationLine[];
   /** 반복 횟수. 시간 기반 동작이면 null */
   repetitions: number | null;
   tts: TtsAsset;

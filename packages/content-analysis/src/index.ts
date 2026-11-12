@@ -207,6 +207,7 @@ export function planSegmentsByDuration(durationSec: number, category: ExerciseCa
     voiceGuide: t.voiceGuide,
     conciseGuide: t.conciseGuide,
     movements: [...t.movements],
+    narration: [],
     repetitions: t.repetitions,
     confidence,
   });

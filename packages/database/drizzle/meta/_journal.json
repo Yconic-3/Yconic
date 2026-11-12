@@ -29,6 +29,13 @@
       "when": 1794485770510,
       "tag": "0003_movement_learning",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794487677028,
+      "tag": "0004_segment_narration",
+      "breakpoints": true
     }
   ]
 }

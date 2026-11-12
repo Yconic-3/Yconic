@@ -36,9 +36,9 @@ const slowAnalyzer: VideoAnalyzer = {
       warnings: [],
       findings: [{ kind: "속도·횟수", text: "3초 내려가기가 자막으로만 나옴" }],
       segments: [
-        { kind: "INTRO", startSec: 0, endSec: 10, title: "준비", instruction: "", voiceGuide: "두 발을 어깨너비로 벌리고 섭니다.", conciseGuide: "준비.", movements: [], repetitions: null, confidence: 0.9 },
-        { kind: "EXERCISE", startSec: 10, endSec: 50, title: "스쿼트", instruction: "", voiceGuide: "엉덩이를 뒤로 빼며 셋을 세는 동안 내려갑니다.", conciseGuide: "스쿼트 10회.", movements: ["squat"], repetitions: 10, confidence: 0.8 },
-        { kind: "EXERCISE", startSec: 50, endSec: 60, title: "팔굽혀펴기", instruction: "", voiceGuide: "엎드려 두 손을 어깨 아래에 둡니다.", conciseGuide: "팔굽혀펴기 5회.", movements: ["pushup"], repetitions: 5, confidence: 0.7 },
+        { kind: "INTRO", startSec: 0, endSec: 10, title: "준비", instruction: "", voiceGuide: "두 발을 어깨너비로 벌리고 섭니다.", conciseGuide: "준비.", movements: [], narration: [{ startSec: 1, endSec: 4, text: "안녕하세요, 오늘은 스쿼트예요." }], repetitions: null, confidence: 0.9 },
+        { kind: "EXERCISE", startSec: 10, endSec: 50, title: "스쿼트", instruction: "", voiceGuide: "엉덩이를 뒤로 빼며 셋을 세는 동안 내려갑니다.", conciseGuide: "스쿼트 10회.", movements: ["squat"], narration: [{ startSec: 11, endSec: 16, text: "엉덩이를 뒤로 빼면서 앉아 주세요." }], repetitions: 10, confidence: 0.8 },
+        { kind: "EXERCISE", startSec: 50, endSec: 60, title: "팔굽혀펴기", instruction: "", voiceGuide: "엎드려 두 손을 어깨 아래에 둡니다.", conciseGuide: "팔굽혀펴기 5회.", movements: ["pushup"], narration: [], repetitions: 5, confidence: 0.7 },
       ],
     };
   },
@@ -100,6 +100,8 @@ describe("맞춤 안내 (/me/guides/:exerciseId)", () => {
     // 뒤꿈치 들기는 배우지 않았으므로 자세하게
     expect(g.segments.find((x) => x.segmentId === "c-squat-s4")!.level).toBe("detailed");
     expect(ai.calls).toHaveLength(1);
+    // AI에게 단계마다 읽을 수 있는 글자 수를 알려 준다 (영상 속도에 맞추기)
+    expect(String(ai.calls[0]!.messages[0]!.content)).toMatch(/최대 [0-9]+글자/);
 
     await me.get("/me/guides/c-squat");
     expect(ai.calls).toHaveLength(1); // 저장된 것을 쓴다
@@ -156,6 +158,8 @@ describe("실제(느린) 영상 분석기 경로", () => {
     const c = (await me.get<MyContent>(`/me/contents/${done.contentId}`)).body;
     expect(c.analysis?.summary).toBe("스쿼트 분석 (파일 있음)");
     expect(c.segments.map((x) => x.movements)).toEqual([[], ["squat"], ["pushup"]]);
+    // 강사가 말한 시각이 단계에 남는다 (음성 안내를 켜면 이 시각에 영상 소리를 끈다)
+    expect(c.segments.map((x) => (x.narration ?? []).map((l) => l.startSec))).toEqual([[1], [11], []]);
     expect(c.segments.every((x) => x.tts.status === "NONE")).toBe(true);
   });
 });

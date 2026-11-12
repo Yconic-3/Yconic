@@ -1,0 +1,1 @@
+ALTER TABLE "segments" ADD COLUMN "narration" jsonb DEFAULT '[]'::jsonb NOT NULL;

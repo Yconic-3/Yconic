@@ -197,6 +197,7 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
       voiceGuide: s.voiceGuide,
       conciseGuide: s.conciseGuide,
       movements: s.movements,
+      narration: s.narration ?? [],
       repetitions: s.repetitions,
       ...(mockTts
         ? { ttsStatus: "READY" as const, ttsAudioUrl: `mock://tts/${job.id}/${i + 1}`, ttsGeneratedForText: s.voiceGuide, ttsRequestedAt: at }
