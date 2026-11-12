@@ -4,8 +4,10 @@
 
 | 주소 | 화면 | 코드 | 자세한 문서 |
 | --- | --- | --- | --- |
-| `/` | 사용자 화면 (말벗핏): 말로 운동을 찾고 구간별 음성 안내를 들으며 운동 | `src/user`, `src/app/(user)` | [docs/user.md](docs/user.md) |
-| `/exercises/{id}` | 운동 화면: 그 운동의 영상, 단계 카드, 지금 안내 중 막대 | 위와 같음 (`src/app/(user)/(assistant)`) | [docs/user.md](docs/user.md) |
+| `/` | 사용자 화면 (소리벗, 시안 D): 말로 운동을 찾고 단계별 음성 안내를 들으며 운동 | `src/user`, `src/app/(user)` | [docs/user.md](docs/user.md) |
+| `/exercises/{id}` | 운동 화면: 영상, 시작·다음·다시·이전, 전체 단계 | 위와 같음 (`src/app/(user)/(assistant)`) | [docs/user.md](docs/user.md) |
+| `/account`, `/courses` | 내 계정·로그인, 내 강의 (배운 강의는 짧게 안내) | 위와 같음 | [docs/user.md](docs/user.md) |
+| `/my/contents` | 콘텐츠 올리기 (회원): 영상 올리기, AI 초안 확인, 검수 요청 | 위와 같음 | [docs/user.md](docs/user.md) |
 | `/login` | 로그인 (사용자·관리자 공통) | `src/app/(user)/login`, `src/lib/auth.ts` | 아래 "로그인" |
 | `/admin` | 관리자 화면: 영상 업로드, AI 구간 분석, 검수·승인·공개 | `src/admin`, `src/app/admin` | [docs/admin.md](docs/admin.md) |
 

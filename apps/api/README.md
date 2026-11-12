@@ -32,6 +32,8 @@ http://localhost:4000/health 가 `{"ok":true}`이면 켜진 것이다. 웹앱(`p
 | 로그인 | `POST /auth/login`, `GET /auth/me`, `POST /auth/logout` | `me`, `logout`만 | `auth.ts` |
 | 사용자 화면 | `GET /exercises`, `GET /exercises/:id`, `GET /videos/:id/playback-url` | 없음 (공개 중인 운동만) | `user-api.ts` |
 | 관리자 화면 | `/admin/...` (영상, 콘텐츠, 검수·공개, 음성, AI 제작 작업, 감사 로그) | 관리자 계정 | `admin-api.ts` |
+| 회원 콘텐츠 올리기 | `/me/videos`, `/me/content-jobs`, `/me/contents` (안내 고치기, 검수 요청) | 로그인한 회원 누구나 (자기 것만) | `creator-api.ts` |
+| 내 강의 | `GET/PUT /me/courses` | 로그인한 회원 | `courses.ts` |
 | 영상 파일 | `GET /media/videos/:파일` | 없음 (임시) | |
 
 로그인이 필요한 요청은 `Authorization: Bearer <token>` 헤더를 붙인다. 없거나 만료되면 401, 관리자가 아니거나 역할 권한이 없으면 403.
