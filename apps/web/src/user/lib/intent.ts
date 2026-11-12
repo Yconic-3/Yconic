@@ -22,6 +22,8 @@ export type Intent =
   /** 로그인·내 계정 화면 */
   | { type: "ACCOUNT" }
   | { type: "LOGOUT" }
+  /** 마이크 사용 허용 */
+  | { type: "MIC" }
   /** 음성 안내 켜기·끄기, 읽던 말 잠시 멈춤·이어 읽기 */
   | { type: "TTS_ON" }
   | { type: "TTS_OFF" }
@@ -45,6 +47,7 @@ export interface IntentExercise {
 const SAFETY_WORDS = ["아파", "아프", "아픕", "통증", "어지러", "어지럽", "숨이 차", "숨차", "숨이 안", "쓰러"];
 const LOGOUT_WORDS = ["로그아웃"];
 const ACCOUNT_WORDS = ["로그인", "내 계정"];
+const MIC_WORDS = ["마이크 허용", "마이크 권한", "마이크 켜", "마이크 사용"];
 const TTS_OFF_WORDS = ["음성 꺼", "음성 끄", "음성 안내 꺼", "음성 안내 끄", "소리 꺼", "소리 끄"];
 const TTS_ON_WORDS = ["음성 켜", "음성 안내 켜", "소리 켜"];
 const TTS_PAUSE_WORDS = ["음성 멈", "음성 잠깐", "읽기 멈"];
@@ -122,6 +125,7 @@ export function parseIntent(raw: string, exercises: IntentExercise[]): Intent {
   // 앱 전체에 쓰는 말: 계정, 음성 설정, 화면 종류. 운동 이름보다 먼저 본다.
   if (hasAny(text, LOGOUT_WORDS)) return { type: "LOGOUT" };
   if (hasAny(text, ACCOUNT_WORDS)) return { type: "ACCOUNT" };
+  if (hasAny(text, MIC_WORDS)) return { type: "MIC" };
   if (hasAny(text, TTS_OFF_WORDS)) return { type: "TTS_OFF" };
   if (hasAny(text, TTS_ON_WORDS)) return { type: "TTS_ON" };
   if (hasAny(text, TTS_PAUSE_WORDS)) return { type: "TTS_PAUSE" };

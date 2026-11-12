@@ -67,6 +67,7 @@ export function createDefaultAgentClient(): AgentClient {
 
 /** 계정·음성 설정·화면 종류처럼 앱 자체를 다루는 말. 길이와 상관없이 화면이 바로 처리한다 */
 const APP_COMMANDS = new Set<Intent["type"]>([
+  "MIC",
   "ACCOUNT",
   "LOGOUT",
   "TTS_ON",

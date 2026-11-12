@@ -90,6 +90,11 @@ describe("parseIntent — 앱 전체 명령 (시안 D)", () => {
     expect(parse("이어 읽어줘")).toEqual({ type: "TTS_RESUME" });
   });
 
+  it("마이크 허용", () => {
+    expect(parse("마이크 허용해줘")).toEqual({ type: "MIC" });
+    expect(parse("마이크 권한 설정")).toEqual({ type: "MIC" });
+  });
+
   it("음성 멈춤은 운동 멈춤과 다르다", () => {
     expect(parse("멈춰")).toEqual({ type: "PAUSE" });
   });
