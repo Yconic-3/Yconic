@@ -12,6 +12,14 @@
 
 ---
 
+## 2026-11-12 · Yconic (실제 영상 분석과 동작 단위 맞춤 안내)
+
+- **영상 분석이 진짜가 됐다.** 영상을 올리면 장면(ffmpeg)과 강사 말(faster-whisper)을 Claude가 보고, 단계와 음성 안내 초안을 만든다. 5분 영상에 약 1분 반 걸린다.
+- **동작 단위 맞춤 안내.** 단계마다 동작(스쿼트, 팔굽혀펴기 …)이 붙는다. 회원이 "스쿼트 배웠어"라고 하거나, 강의를 등록하거나, 3번 끝까지 따라 하면 그 동작은 어느 영상에서든 짧게 안내한다. AI가 배운 용어로 사람마다 다시 쓴다.
+- 실제 분석을 쓰려면 `apps/api/.env`에 `ANTHROPIC_API_KEY`, 그리고 ffmpeg·Python(faster-whisper)이 필요하다. 없으면 `VIDEO_ANALYZER=mock`.
+- 테이블이 늘었다 (`account_movements`, `personalized_guides`, `segments.movements`). 받은 뒤 `pnpm db:migrate`.
+- 자세한 내용: `docs/decisions/0008-실제-영상-분석과-동작-단위-맞춤-안내.md`
+
 ## 2026-11-12 · Yconic (사용자 화면을 유튜브처럼: 찾기 → 영상 목록 → 시청)
 
 - **시작 화면**: 큰 「눌러서 말하기」, 그 아래 검색창, 분류로 찾기, 모든 운동 영상(썸네일 격자)

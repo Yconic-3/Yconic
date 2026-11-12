@@ -21,8 +21,9 @@
 - 작업 분담과 규칙은 `docs/decisions/0001-모노레포-구조와-작업-분담.md` 참고. 자기 담당 폴더 밖은 고치지 않는다
 - **백엔드는 `apps/api`(NestJS, 포트 4000) + PostgreSQL 18(`packages/database`, Drizzle, 포트 5433)이다.** 웹앱은 기본으로 API를 쓰고, 서버 없이 볼 때는 `NEXT_PUBLIC_API_MODE=mock` (`docs/decisions/0005-데이터베이스와-API-구성.md`)
 - **사용자 AI 에이전트는 `apps/user-agent`(포트 4100)이고 Claude는 `packages/ai-common`으로 부른다.** 에이전트는 DB를 만지지 않고 API의 공개 운동만 읽으며, 화면이 할 일만 돌려준다. API 키가 없으면 꺼지고 웹앱은 규칙 기반 해석을 쓴다 (`docs/decisions/0006-사용자-AI-에이전트.md`)
+- **영상 분석은 실제 분석기(ffmpeg 장면 + faster-whisper 받아쓰기 + Claude)다.** API에 `ANTHROPIC_API_KEY`가 없거나 `VIDEO_ANALYZER=mock`이면 모의 분석기. 단계마다 동작(`movements`)을 붙이고, 회원마다 아는 동작(내 동작)에 따라 단계별로 짧게/자세하게 안내하며 AI가 사람마다 다시 쓴다 (`docs/decisions/0008-실제-영상-분석과-동작-단위-맞춤-안내.md`)
 - 테이블 설명은 `docs/database.md`. 테이블을 바꾸면 `packages/database/src/schema.ts` 수정 → `pnpm db:generate`로 마이그레이션 생성 → `pnpm db:migrate`
-- 제작 작업기와 영상 저장은 아직 임시다 (API 서버 안 모듈, 모의 분석기, 서버 폴더 저장). 설계 문서의 BullMQ·S3로 바꿀 예정
+- 제작 작업기와 영상 저장은 아직 임시다 (API 서버 안 모듈, 서버 폴더 저장, 음성 파일 없이 기기 음성으로 읽기). 설계 문서의 BullMQ·S3·TTS로 바꿀 예정
 
 ## 자주 쓰는 명령
 
