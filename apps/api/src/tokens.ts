@@ -2,3 +2,5 @@
 export const CONFIG = Symbol("CONFIG");
 export const DB = Symbol("DB");
 export const ANALYZER = Symbol("ANALYZER");
+/** Claude 연결 (AiModel). API 키가 없으면 null */
+export const AI = Symbol("AI");

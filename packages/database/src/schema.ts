@@ -13,6 +13,7 @@ import {
   SEGMENT_KINDS,
   TTS_STATUSES,
   type AnalysisInfo,
+  type PersonalizedSegmentGuide,
 } from "@yconic/shared-types";
 import { sql } from "drizzle-orm";
 import {
@@ -83,6 +84,49 @@ export const accountCourses = pgTable(
     createdAt: createdAt(),
   },
   (t) => [primaryKey({ columns: [t.accountId, t.courseId] })],
+);
+
+/**
+ * 회원이 동작에 대해 아는 것 (학습 프로필, docs/decisions/0008).
+ * 강의로 배운 동작은 account_courses에서 따로 계산하고, 여기에는 직접 알린 것과 연습 횟수를 둔다.
+ */
+export const accountMovements = pgTable(
+  "account_movements",
+  {
+    accountId: text("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    /** shared-types MOVEMENT_IDS 중 하나 */
+    movementId: text("movement_id").notNull(),
+    /** "스쿼트 배웠어"처럼 직접 알렸는지 */
+    declared: boolean("declared").notNull().default(false),
+    /** 앱에서 그 동작 단계를 끝까지 따라 한 횟수 */
+    practiceCount: integer("practice_count").notNull().default(0),
+    /** 강사에게 배운 용어나 신호. AI 맞춤 안내가 쓴다 */
+    terms: text("terms").notNull().default(""),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.accountId, t.movementId] })],
+);
+
+/** AI가 회원 한 사람에게 맞춰 다시 쓴 단계별 안내. 프로필이나 콘텐츠가 바뀌면 다시 만든다 */
+export const personalizedGuides = pgTable(
+  "personalized_guides",
+  {
+    accountId: text("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    contentId: text("content_id")
+      .notNull()
+      .references(() => contents.id, { onDelete: "cascade" }),
+    /** 만들 때의 콘텐츠 버전과 관련 학습 프로필을 묶은 값. 다르면 다시 만든다 */
+    profileKey: text("profile_key").notNull(),
+    guides: jsonb("guides").$type<PersonalizedSegmentGuide[]>().notNull(),
+    /** "ai" 또는 "rule" */
+    generatedBy: text("generated_by").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.accountId, t.contentId] })],
 );
 
 // ── 영상과 콘텐츠 ──
@@ -159,6 +203,8 @@ export const segments = pgTable(
     voiceGuide: text("voice_guide").notNull().default(""),
     /** 동작을 배운 사람에게 읽어 주는 짧은 안내. 비어 있으면 voice_guide를 읽는다 (docs/decisions/0007) */
     conciseGuide: text("concise_guide").notNull().default(""),
+    /** 이 단계의 동작 (shared-types MOVEMENT_IDS). 사용자가 아는 동작이면 짧게 안내한다 (docs/decisions/0008) */
+    movements: text("movements").array().notNull().default(sql`'{}'::text[]`),
     repetitions: integer("repetitions"),
     // 음성 파일(TTS). 서버가 관리하며, 화면에서 보낸 값으로 바꾸지 않는다.
     ttsStatus: ttsStatus("tts_status").notNull().default("NONE"),

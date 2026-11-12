@@ -20,7 +20,8 @@
     "drizzle-orm": "^0.45.4",
     "multer": "^2.5.0",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.2"
+    "rxjs": "^7.8.2",
+    "@yconic/ai-common": "workspace:*"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

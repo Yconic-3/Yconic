@@ -1,4 +1,7 @@
 import "reflect-metadata";
+import { aiSettingsFromEnv, createClaudeModel } from "@yconic/ai-common";
+import { createMockAnalyzer } from "@yconic/content-analysis";
+import { createClaudeVideoAnalyzer, createLocalMediaTools } from "@yconic/content-analysis/claude";
 import { connectDatabase, databaseUrl } from "@yconic/database";
 import { sql } from "drizzle-orm";
 import { loadConfig } from "./config";
@@ -29,7 +32,17 @@ for (let attempt = 1; ; attempt++) {
     await new Promise((r) => setTimeout(r, 1000));
   }
 }
-const app = await createApp({ config, db });
+// Claude: API 키가 있으면 실제 영상 분석기(장면 + 강사의 말 받아쓰기)와 AI 맞춤 안내를 쓴다 (docs/decisions/0008)
+const aiSettings = aiSettingsFromEnv();
+const ai = aiSettings.apiKey ? createClaudeModel({ settings: { ...aiSettings, apiKey: aiSettings.apiKey } }) : null;
+const useClaudeAnalyzer = !!ai && (process.env.VIDEO_ANALYZER ?? "claude") === "claude";
+const analyzer = useClaudeAnalyzer
+  ? createClaudeVideoAnalyzer({
+      model: ai,
+      media: createLocalMediaTools({ ffmpeg: process.env.FFMPEG, python: process.env.PYTHON, whisperModel: process.env.WHISPER_MODEL }),
+    })
+  : createMockAnalyzer();
+const app = await createApp({ config, db, analyzer, ai });
 
 try {
   await app.listen(config.port);
@@ -40,6 +53,12 @@ try {
 
 console.log(`[api] http://localhost:${config.port} 에서 실행 중 (DB: ${databaseUrl().replace(/:[^:@/]+@/, ":***@")})`);
 console.log(`[api] 웹앱 주소 허용: ${config.webOrigins.join(", ")}`);
+console.log(
+  useClaudeAnalyzer
+    ? `[api] 영상 분석: Claude(${aiSettings.model}) + 장면 추출(ffmpeg) + 받아쓰기(faster-whisper)`
+    : "[api] 영상 분석: 모의 분석기 (ANTHROPIC_API_KEY가 없거나 VIDEO_ANALYZER=mock)",
+);
+console.log(ai ? "[api] 맞춤 안내: AI가 사용자별로 다시 씀" : "[api] 맞춤 안내: 규칙으로 고름 (API 키 없음)");
 
 const shutdown = async () => {
   await app.close();

@@ -6,6 +6,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inject } from "vitest";
+import type { AiModel } from "@yconic/ai-common";
+import type { VideoAnalyzer } from "@yconic/content-analysis";
 import { loadConfig, type ApiConfig } from "../src/config";
 import { createApp } from "../src/create-app";
 import { WorkerService } from "../src/worker/worker.service";
@@ -17,16 +19,18 @@ export interface TestServer {
   baseUrl: string;
   /** 작업기를 한 번 돌린다. ms만큼 시간이 지난 것으로 계산한다. */
   runWorker(afterMs?: number): Promise<void>;
+  /** 실제(느린) 분석기로 돌던 작업이 모두 끝날 때까지 기다린다 */
+  waitWorker(): Promise<void>;
   reset(): Promise<void>;
   close(): Promise<void>;
 }
 
-export async function startTestServer(): Promise<TestServer> {
+export async function startTestServer(opts: { ai?: AiModel | null; analyzer?: VideoAnalyzer } = {}): Promise<TestServer> {
   const storageDir = mkdtempSync(join(tmpdir(), "yconic-api-storage-"));
   // 작업기는 자동으로 돌지 않게 하고, 테스트가 runWorker로 직접 돌린다.
   const config = loadConfig({ port: 0, storageDir, jobStageMs: 1000, ttsMs: 1000, workerIntervalMs: 0, webOrigins: ["http://localhost:3000"] });
   const conn = connectDatabase(inject("databaseUrl"));
-  const app = await createApp({ config, db: conn.db, quiet: true });
+  const app = await createApp({ config, db: conn.db, quiet: true, ai: opts.ai ?? null, analyzer: opts.analyzer });
   await app.listen(0, "127.0.0.1");
   const baseUrl = (await app.getUrl()).replace("[::1]", "localhost");
   config.publicUrl = baseUrl;
@@ -37,6 +41,7 @@ export async function startTestServer(): Promise<TestServer> {
     conn,
     baseUrl,
     runWorker: (afterMs = 0) => worker.tick(Date.now() + afterMs),
+    waitWorker: () => worker.idle(),
     reset: () => seedDatabase(conn.db),
     async close() {
       await app.close();

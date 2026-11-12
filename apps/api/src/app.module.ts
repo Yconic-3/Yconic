@@ -14,7 +14,9 @@ import { videosDir, type ApiConfig } from "./config";
 import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
 import { PublicController } from "./public/public.controller";
-import { ANALYZER, CONFIG, DB } from "./tokens";
+import { AI, ANALYZER, CONFIG, DB } from "./tokens";
+import type { AiModel } from "@yconic/ai-common";
+import { LearningService } from "./me/learning.service";
 import { WorkerService } from "./worker/worker.service";
 
 /** 확장자는 영문·숫자만 남긴다 (저장 파일 이름에 사용자가 보낸 글자가 섞이지 않게) */
@@ -25,7 +27,7 @@ function safeExt(name: string): string {
 
 @Module({})
 export class AppModule {
-  static create(config: ApiConfig, db: Database, analyzer: VideoAnalyzer): DynamicModule {
+  static create(config: ApiConfig, db: Database, analyzer: VideoAnalyzer, ai: AiModel | null): DynamicModule {
     return {
       module: AppModule,
       imports: [
@@ -44,6 +46,8 @@ export class AppModule {
         { provide: CONFIG, useValue: config },
         { provide: DB, useValue: db },
         { provide: ANALYZER, useValue: analyzer },
+        { provide: AI, useValue: ai },
+        LearningService,
         AuthService,
         AuthGuard,
         AdminGuard,

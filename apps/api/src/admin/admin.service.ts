@@ -178,6 +178,7 @@ export class AdminService {
       instruction: s.instruction,
       voiceGuide: s.voiceGuide,
       conciseGuide: s.conciseGuide ?? "",
+      movements: s.movements ?? prev?.movements ?? [],
       repetitions: s.repetitions,
       ttsStatus: prev?.ttsStatus ?? "NONE",
       ttsAudioUrl: prev?.ttsAudioUrl ?? null,

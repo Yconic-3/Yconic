@@ -26,6 +26,9 @@ importers:
       '@nestjs/platform-express':
         specifier: ^12.4.2
         version: 12.4.2(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(rxjs@7.8.2)
+      '@yconic/ai-common':
+        specifier: workspace:*
+        version: link:../../packages/ai-common
       '@yconic/content-analysis':
         specifier: workspace:*
         version: link:../../packages/content-analysis
@@ -167,16 +170,25 @@ importers:
 
   packages/content-analysis:
     dependencies:
+      '@yconic/ai-common':
+        specifier: workspace:*
+        version: link:../ai-common
       '@yconic/shared-types':
         specifier: workspace:*
         version: link:../shared-types
     devDependencies:
+      '@types/node':
+        specifier: ^24.19.2
+        version: 24.19.2
       '@yconic/config':
         specifier: workspace:*
         version: link:../config
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
+      vitest:
+        specifier: ^5.1.0
+        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@24.19.2)(vite@8.3.6(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
 
   packages/database:
     dependencies:

@@ -4,11 +4,13 @@ import {
   DIFFICULTIES,
   EXERCISE_CATEGORIES,
   LEARNED_COURSE_IDS,
+  MOVEMENT_IDS,
   SEGMENT_KINDS,
   type ChangeContentStatusInput,
   type ContentListFilter,
   type CreateContentJobInput,
   type ExerciseSegment,
+  type MovementId,
   type MyCourses,
   type ReanalyzeContentInput,
   type ReplaceContentVideoInput,
@@ -61,6 +63,11 @@ function strList(v: unknown, field: string, maxItems = 50): string[] {
   return v.map((x, i) => str(x, `${field} ${i + 1}번째`, { max: 500 }));
 }
 
+function movementList(v: unknown, field: string): MovementId[] {
+  if (!Array.isArray(v)) fail(`${field}은(는) 목록이어야 합니다.`);
+  return [...new Set(v.map((m) => oneOf(m, MOVEMENT_IDS, field)))];
+}
+
 /** 구간. 음성(tts) 칸은 서버가 관리하므로 읽지 않는다. */
 export type SegmentInput = Omit<ExerciseSegment, "tts" | "order">;
 
@@ -76,6 +83,8 @@ function segment(v: unknown, i: number): SegmentInput {
     instruction: str(s.instruction ?? "", `${label} 동작 설명`, { max: 2000 }),
     voiceGuide: str(s.voiceGuide, `${label} 음성 안내문`, { max: 2000 }),
     conciseGuide: str(s.conciseGuide ?? "", `${label} 짧은 안내문`, { max: 1000 }),
+    // 동작은 보내지 않으면 서버가 원래 값을 지킨다 (admin.service segmentRow)
+    movements: s.movements === undefined ? undefined : movementList(s.movements, `${label} 동작`),
     repetitions: s.repetitions === null || s.repetitions === undefined ? null : int(s.repetitions, `${label} 반복 횟수`),
   };
 }
@@ -178,4 +187,19 @@ export function parseSubmitMy(body: unknown): SubmitMyContentInput {
   const b = obj(body);
   if (typeof b.confirmed !== "boolean") fail("confirmed는 참·거짓이어야 합니다.");
   return { expectedVersion: int(b.expectedVersion, "expectedVersion"), confirmed: b.confirmed };
+}
+
+export function parseSetMovement(movementId: string, body: unknown): { movementId: MovementId; known: boolean; terms?: string } {
+  const b = obj(body);
+  if (typeof b.known !== "boolean") fail("known은 참·거짓이어야 합니다.");
+  return {
+    movementId: oneOf(movementId, MOVEMENT_IDS, "동작"),
+    known: b.known,
+    terms: b.terms === undefined ? undefined : str(b.terms, "배운 용어", { max: 300 }),
+  };
+}
+
+export function parseRecordPractice(body: unknown): { movementIds: MovementId[] } {
+  const b = obj(body);
+  return { movementIds: movementList(b.movementIds, "동작").slice(0, 20) };
 }
