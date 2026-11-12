@@ -11,16 +11,28 @@ export type ClaudeMessage = Anthropic.Beta.Messages.BetaMessage;
 export type ClaudeMessageParam = Anthropic.Beta.Messages.BetaMessageParam;
 export type ClaudeTool = Anthropic.Beta.Messages.BetaTool;
 export type ClaudeContentBlock = Anthropic.Beta.Messages.BetaContentBlock;
+/** 요청에 넣는 블록 (글, 사진 …) */
+export type ClaudeContentBlockParam = Anthropic.Beta.Messages.BetaContentBlockParam;
 export type ClaudeToolUseBlock = Anthropic.Beta.Messages.BetaToolUseBlock;
 export type ClaudeToolResultBlockParam = Anthropic.Beta.Messages.BetaToolResultBlockParam;
 
 /** 에이전트가 정하는 부분. 모델·대체 모델·생각 깊이는 공통 설정이 채운다 */
 export type AgentRequest = Pick<ClaudeRequest, "system" | "tools" | "messages" | "max_tokens">;
 
+/** 요청마다 바꿀 수 있는 것 */
+export interface RunOptions {
+  /** 생각 깊이 (기본: 설정값) */
+  effort?: AiEffort;
+  /** 답을 이 JSON 모양으로만 받는다 (구조화된 출력) */
+  jsonSchema?: Record<string, unknown>;
+  /** 오래 걸리는 요청(영상 분석)의 대기 시간 (밀리초) */
+  timeoutMs?: number;
+}
+
 /** Claude를 부르는 함수. 테스트에서는 가짜로 바꿔 끼운다 */
 export interface AiModel {
   readonly name: string;
-  run(request: AgentRequest): Promise<ClaudeMessage>;
+  run(request: AgentRequest, options?: RunOptions): Promise<ClaudeMessage>;
 }
 
 export const DEFAULT_MODEL = "claude-opus-5-5";
@@ -117,18 +129,24 @@ export function createClaudeModel({ settings, onUsage = logUsage, client }: Clau
   const anthropic = client ?? new Anthropic({ apiKey: settings.apiKey, maxRetries: 1, timeout: 60_000 });
   return {
     name: settings.model,
-    async run(request) {
+    async run(request, options = {}) {
       try {
-        const message = await anthropic.beta.messages.create({
+        const message = await anthropic.beta.messages.create(
+          {
           ...request,
           model: settings.model,
           // 생각은 늘 켜져 있고(적응형), 깊이만 정한다. 음성 대화는 빨라야 해서 기본은 low
-          output_config: { effort: settings.effort },
+          output_config: {
+            effort: options.effort ?? settings.effort,
+            ...(options.jsonSchema ? { format: { type: "json_schema" as const, schema: options.jsonSchema } } : {}),
+          },
           // 도구 정의와 시스템 프롬프트는 매번 같으므로 캐시해 비용과 지연을 줄인다
           cache_control: { type: "ephemeral" },
           fallbacks: "default",
           betas: [FALLBACK_BETA],
-        });
+          },
+          options.timeoutMs ? { timeout: options.timeoutMs } : undefined,
+        );
         onUsage(usageOf(message));
         return message;
       } catch (e) {
