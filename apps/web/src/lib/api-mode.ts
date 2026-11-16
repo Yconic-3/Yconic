@@ -19,5 +19,13 @@ export function agentBaseUrl(): string {
   return (process.env.NEXT_PUBLIC_AGENT_URL ?? "http://localhost:4100").replace(/\/+$/, "");
 }
 
+/**
+ * 공개 링크로 열어 두는 빌드인지 (pnpm share, docs/decisions/0010).
+ * 이때는 체험 계정 중 일반 회원만 보여 준다. 관리자 계정은 공개 링크에서 로그인할 수 없다 (API가 막는다).
+ */
+export function isShareMode(): boolean {
+  return process.env.NEXT_PUBLIC_SHARE_MODE === "1";
+}
+
 /** 서버에 연결하지 못했을 때 보여 줄 말 */
 export const API_UNREACHABLE_MESSAGE = "서버에 연결할 수 없습니다. API 서버(pnpm dev:api)가 켜져 있는지 확인해 주세요.";

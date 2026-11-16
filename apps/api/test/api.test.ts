@@ -43,6 +43,19 @@ describe("로그인", () => {
     expect(res.body.code).toBe("UNAUTHORIZED");
   });
 
+  it("공개 링크(Cloudflare)로 들어오면 관리자 계정은 로그인할 수 없고, 일반 회원은 된다", async () => {
+    const viaLink = (email: string, password: string) =>
+      fetch(`${s.baseUrl}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "cf-connecting-ip": "203.0.113.7" },
+        body: JSON.stringify({ email, password }),
+      });
+    const admin = await viaLink("super@example.com", "super1234");
+    expect(admin.status).toBe(403);
+    expect(((await admin.json()) as { message: string }).message).toMatch(/관리자 계정/);
+    expect((await viaLink("member@example.com", "member1234")).status).toBe(200);
+  });
+
   it("로그아웃하면 토큰을 더 쓸 수 없다", async () => {
     const res = await anon().post<LoginResponse>("/auth/login", { email: "member@example.com", password: "member1234" });
     const me = client(s.baseUrl, res.body.token);
