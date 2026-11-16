@@ -10,6 +10,8 @@ export type Intent =
   | { type: "HOME" }
   | { type: "BACK" }
   | { type: "LIST"; category: ExerciseCategory | null; keyword: string | null }
+  /** 모든 운동 영상 화면 */
+  | { type: "VIDEOS" }
   | { type: "OPEN"; exerciseId: Id; autoplay: boolean }
   | { type: "START" }
   | { type: "PAUSE" }
@@ -66,6 +68,7 @@ const COURSES_WORDS = ["내 강의", "강의", "배웠", "수강"];
 const NOT_WORDS = ["안 ", "않", "없", "빼"];
 const LEARN_WORDS = ["배웠", "익혔", "할 줄 알", "할 줄 몰", "모르", "몰라", "잊어"];
 const UNKNOWN_WORDS = ["몰", "모르", "잊어"];
+const VIDEOS_WORDS = ["모든 영상", "전체 영상", "모든 운동", "전체 운동", "영상 목록", "운동 목록", "영상 다 보여", "운동 다 보여"];
 const HOME_WORDS = ["홈", "처음으로", "첫 화면"];
 const BACK_WORDS = ["이전 화면", "뒤로 가", "돌아가"];
 const LIST_WORDS = ["찾아", "검색", "추천", "목록", "뭐 있", "뭐가 있", "어떤 운동", "무슨 운동"];
@@ -153,6 +156,7 @@ export function parseIntent(raw: string, exercises: IntentExercise[]): Intent {
     const course = LEARNED_COURSES.find((c) => c.words.some((w) => text.includes(w)));
     return { type: "COURSES", courseId: course?.id ?? null, learned: !hasAny(text, NOT_WORDS) };
   }
+  if (hasAny(text, VIDEOS_WORDS)) return { type: "VIDEOS" };
   if (hasAny(text, HOME_WORDS)) return { type: "HOME" };
   if (hasAny(text, BACK_WORDS)) return { type: "BACK" };
   if (hasAny(text, HELP_WORDS)) return { type: "HELP" };

@@ -35,6 +35,8 @@ export const ICONS = {
   chat: "M4 5h16v11H9l-5 4z",
   search: "M11 11m-7 0a7 7 0 1 0 14 0a7 7 0 1 0-14 0M20 20l-4-4",
   shield: "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z",
+  menu: "M4 6h16M4 12h16M4 18h16",
+  close: "M6 6l12 12M18 6L6 18",
 } as const;
 
 export function Icon({ d, size = 24, strokeWidth = 2.4 }: { d: string; size?: number; strokeWidth?: number }) {
@@ -82,9 +84,6 @@ export function Brand() {
       </span>
       <span className="whitespace-nowrap text-[28px] font-extrabold tracking-[-0.5px]" aria-hidden>
         소리벗
-      </span>
-      <span className="hidden text-base text-ink-3 xl:inline" aria-hidden>
-        말로 찾고, 듣고 따라 하는 운동
       </span>
     </Link>
   );

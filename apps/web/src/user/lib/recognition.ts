@@ -45,6 +45,7 @@ export function startListening(handlers: { onText(text: string): void; onError(e
     return null;
   }
   let active = true;
+  let stopTimer = () => {};
   let recognition: RecognitionInstance;
   try {
     recognition = new Ctor();
@@ -64,17 +65,30 @@ export function startListening(handlers: { onText(text: string): void; onError(e
         handlers.onError("failed");
       }
     };
-    // 브라우저가 조용할 때 인식을 끝내면 다시 시작해 계속 듣는다.
-    recognition.onend = () => {
+    // 브라우저가 조용할 때나 잠깐 끊겼을 때 인식을 끝내면 다시 시작해 계속 듣는다.
+    // 바로 다시 시작하면 브라우저가 거절할 때가 있어, 조금 기다렸다가 될 때까지 다시 시도한다 (멈추라고 할 때까지).
+    let retry = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const restart = () => {
+      timer = null;
       if (!active) return;
       try {
         recognition.start();
+        retry = 0;
       } catch {
-        active = false;
-        handlers.onError("failed");
+        retry++;
+        timer = setTimeout(restart, Math.min(5000, 250 * 2 ** retry));
       }
     };
+    recognition.onend = () => {
+      if (!active || timer) return;
+      timer = setTimeout(restart, 150);
+    };
     recognition.start();
+    stopTimer = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    };
   } catch {
     handlers.onError("failed");
     return null;
@@ -82,6 +96,7 @@ export function startListening(handlers: { onText(text: string): void; onError(e
   return {
     stop() {
       active = false;
+      stopTimer();
       try {
         recognition.stop();
       } catch {

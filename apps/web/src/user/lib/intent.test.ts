@@ -39,7 +39,9 @@ describe("parseIntent", () => {
   });
 
   it("'목록'을 태그 '목'으로 잘못 읽지 않는다", () => {
-    expect(parse("운동 목록 보여줘")).toEqual({ type: "LIST", category: null, keyword: null });
+    // 운동 전체 목록은 '모든 운동 영상' 화면으로 간다 (태그 '목'으로 찾지 않는다)
+    expect(parse("운동 목록 보여줘")).toEqual({ type: "VIDEOS" });
+    expect(parse("목록 보여줘")).toEqual({ type: "LIST", category: null, keyword: null });
   });
 
   it("분류만 말해도 목록으로 본다", () => {
@@ -113,6 +115,11 @@ describe("parseIntent — 앱 전체 명령 (시안 D)", () => {
     expect(parse("코어 강의는 안 들었어")).toEqual({ type: "COURSES", courseId: "core", learned: false });
     // 강의라는 말이 없으면 운동 찾기다
     expect(parse("하체 운동 찾아줘")).toEqual({ type: "LIST", category: null, keyword: "하체" });
+  });
+
+  it("모든 운동 영상 화면으로 간다", () => {
+    expect(parse("모든 영상 보여줘")).toEqual({ type: "VIDEOS" });
+    expect(parse("전체 운동 목록")).toEqual({ type: "VIDEOS" });
   });
 
   it("부르면 듣기를 켜고 끈다", () => {

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
 import {
@@ -33,7 +32,7 @@ import { eulReul, eunNeun, ieyo } from "@/user/lib/korean";
 import { parseIntent, type Intent } from "@/user/lib/intent";
 import { HOME_VIEW, type View } from "@/user/lib/navigation";
 import { formatDuration, SESSION_STATE_LABELS } from "@/user/lib/player";
-import { searchExercises, searchPath, searchTerms } from "@/user/lib/search";
+import { searchExercises, searchPath, searchTerms, VIDEOS_PATH } from "@/user/lib/search";
 import { micPermissionText, requestMicPermission, watchMicPermission, type MicPermission } from "@/user/lib/mic-permission";
 import { startListening, type Listener, type ListenError } from "@/user/lib/recognition";
 import { playEarcon } from "@/user/lib/earcon";
@@ -118,7 +117,11 @@ function readPrefs(): VoicePrefs {
   try {
     const raw = window.localStorage.getItem(PREFS_KEY);
     const v = raw ? (JSON.parse(raw) as { tts?: unknown; rate?: unknown; wake?: unknown }) : {};
-    return { tts: v.tts !== false, rate: typeof v.rate === "number" ? clampRate(v.rate) : 1, wake: v.wake !== false };
+    return {
+      tts: v.tts !== false,
+      rate: typeof v.rate === "number" ? clampRate(v.rate) : 1,
+      wake: v.wake !== false,
+    };
   } catch {
     return { tts: true, rate: 1, wake: true };
   }
@@ -193,7 +196,12 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
   );
   const setMovementKnown = useCallback(
     async (id: MovementId, known: boolean, terms?: string) => {
-      setLearning(await learningApi.setMovement(id, { known, ...(terms !== undefined ? { terms } : {}) }));
+      setLearning(
+        await learningApi.setMovement(id, {
+          known,
+          ...(terms !== undefined ? { terms } : {}),
+        }),
+      );
     },
     [learningApi],
   );
@@ -205,7 +213,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [log, setLog] = useState<Message[]>([{ id: 0, who: "bot", text: GREETING }]);
   const [lastSaid, setLastSaid] = useState(GREETING);
-  const [lastHeard, setLastHeard] = useState<string | null>(null);
+  const [, setLastHeard] = useState<string | null>(null);
   /** 스크린리더에 알릴 말 (음성 안내를 껐을 때와 설정이 바뀔 때) */
   const [announce, setAnnounce] = useState("");
   const [rate, setRate] = useState(1);
@@ -215,6 +223,8 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
   const [query, setQuery] = useState("");
   /** AI 에이전트의 답을 기다리는 중 */
   const [thinking, setThinking] = useState(false);
+  const thinkingRef = useRef(thinking);
+  thinkingRef.current = thinking;
   /** children 페이지가 알려 준 제목·예시 말 */
   const [page, setPage] = useState<PageInfo | null>(null);
   /** 마이크 사용 권한 (브라우저가 알려 준 상태) */
@@ -428,7 +438,6 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     [],
   );
 
-
   /** 운동 화면(/exercises/[id])으로 간다. 마이크와 대화는 그대로 이어진다. */
   const openExercise = useCallback(
     (id: string, autoplay: boolean) => {
@@ -483,14 +492,14 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     (text: string, quiet = false) => {
       stopSpeaking();
       quietPageRef.current = quiet;
+      // 찾을 말이 없으면("운동 찾아줘", "모든 영상") 모든 운동 영상 화면으로 간다. 그 화면이 개수를 읽어 준다
       if (!searchTerms(text).length) {
-        if (pathname !== "/") router.push("/");
-        if (!quiet) void say(`전체 운동 영상은 ${exercises?.length ?? 0}개입니다. 찾을 말을 말하거나 영상을 골라 주세요.`);
+        router.push(VIDEOS_PATH);
         return;
       }
       router.push(searchPath(text));
     },
-    [exercises, pathname, router, say],
+    [router],
   );
 
   const handleLogout = useCallback(() => {
@@ -604,6 +613,9 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           return;
         case "TTS_ON":
           setTts(true);
+          return;
+        case "VIDEOS":
+          goSearch("");
           return;
         case "WAKE_ON":
           setWakeEnabled(true);
@@ -796,7 +808,10 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       if (!text) return;
       const seq = ++commandSeqRef.current;
       // 지금 말을 넣기 전의 대화를 에이전트에게 함께 보낸다
-      const history: AgentTurn[] = logRef.current.map((m) => ({ role: m.who === "me" ? "user" : "assistant", text: m.text }));
+      const history: AgentTurn[] = logRef.current.map((m) => ({
+        role: m.who === "me" ? "user" : "assistant",
+        text: m.text,
+      }));
       addMessage("me", text);
       setLastHeard(text);
       const intent = parseIntent(text, exercises ?? []);
@@ -897,11 +912,43 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     armTimerRef.current = window.setTimeout(() => disarm(true), ARM_MS);
   }, [disarm]);
 
+  // 이어서 말하기: 명령을 처리하고 앱이 대답을 다 읽으면 알림음을 내고 다음 한 마디를 또 듣는다.
+  // 그래서 "소리벗"은 처음 한 번만 부르면 된다. 정해진 시간 동안 말이 없으면 낮은 알림음과 함께 그만 듣는다.
+  // 운동 영상이 재생 중이면 이어 듣지 않는다 (영상 소리를 계속 끄게 되므로). 그때는 다시 "소리벗"이라고 부른다.
+  const followUpTimerRef = useRef<number | null>(null);
+  const cancelFollowUp = () => {
+    if (followUpTimerRef.current !== null) window.clearInterval(followUpTimerRef.current);
+    followUpTimerRef.current = null;
+  };
+  const scheduleFollowUp = useCallback(() => {
+    cancelFollowUp();
+    const started = Date.now();
+    let quietSince = 0;
+    followUpTimerRef.current = window.setInterval(() => {
+      const now = Date.now();
+      if (armedRef.current || !listenerRef.current || sessionRef.current.playing || now - started > 60_000) {
+        cancelFollowUp();
+        return;
+      }
+      // 대답을 준비하는 동안(생각 중·읽는 중)은 기다린다. 명령 직후 대답이 시작되기 전의 잠깐은 넘긴다
+      if (now - started < 700 || thinkingRef.current || getSpeechState().speaking) {
+        quietSince = 0;
+        return;
+      }
+      if (!quietSince) quietSince = now;
+      else if (now - quietSince >= 400) {
+        cancelFollowUp();
+        arm();
+      }
+    }, 150);
+  }, [arm]);
+
   const heard = useCallback(
     (text: string) => {
       const r = gateRef.current.feed(text);
       if (!r) return;
       if (r.kind === "armed") {
+        cancelFollowUp();
         arm();
         return;
       }
@@ -910,9 +957,10 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       setArmed(false);
       setVoiceStatus(`들린 말: "${r.text}"`);
       handleCommandRef.current(r.text);
-      releaseListener();
+      if (listenerRef.current) scheduleFollowUp();
+      else releaseListener();
     },
-    [arm, releaseListener],
+    [arm, releaseListener, scheduleFollowUp],
   );
   const heardRef = useRef(heard);
   heardRef.current = heard;
@@ -923,12 +971,12 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     const listener = startListening({
       onText: (text) => heardRef.current(text),
       onError: (error) => {
+        // 잠깐 끊긴 것(failed)은 알아서 다시 듣는다. 알릴 것은 지원 안 함·권한 거부뿐
+        if (error === "failed") return;
         setVoiceStatus(LISTEN_ERROR_TEXT[error]);
         if (error === "denied") setMic("denied");
-        if (error !== "failed") {
-          listenerRef.current = null;
-          setListening(false);
-        }
+        listenerRef.current = null;
+        setListening(false);
       },
     });
     if (!listener) return false;
@@ -958,6 +1006,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
 
   /** 큰 버튼: "소리벗"이라고 부른 것과 같다. 듣는 중에 누르면 그만 듣는다 */
   const pressToTalk = useCallback(async () => {
+    cancelFollowUp();
     if (armedRef.current) {
       disarm(true);
       return;
@@ -999,6 +1048,38 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     }
   };
 
+  // ── 메뉴 (세 줄 버튼) ──
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  /** 메뉴에서 고르면 닫고 그 일을 한다 */
+  const pickMenu = (action: () => void) => {
+    setMenuOpen(false);
+    action();
+  };
+  useEffect(() => {
+    if (!menuOpen) return;
+    // 열리면 첫 항목으로 초점을 옮긴다 (키보드·스크린리더 사용자가 바로 고를 수 있게)
+    menuRef.current?.querySelector<HTMLButtonElement>("#site-menu button")?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setMenuOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    };
+    const onDown = (e: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onDown);
+    };
+  }, [menuOpen]);
+  // 다른 화면으로 가면 닫는다
+  useEffect(() => setMenuOpen(false), [pathname]);
+
   const shellApi = useMemo<ShellApi>(
     () => ({
       account,
@@ -1013,6 +1094,8 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
         pageCommandsRef.current = handler;
       },
       exercises,
+      exercisesError: loadError,
+      reloadExercises: () => void loadExercises(),
       levelOf,
       openExercise,
       shouldAnnounce: () => {
@@ -1021,7 +1104,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
         return !quiet;
       },
     }),
-    [account, accountId, exercises, learned, learning, levelOf, openExercise, refreshAccount, say, setLearnedCourses, setMovementKnown],
+    [account, accountId, exercises, learned, learning, levelOf, loadError, loadExercises, openExercise, refreshAccount, say, setLearnedCourses, setMovementKnown],
   );
 
   // ── 화면에 쓸 값 ──
@@ -1048,13 +1131,17 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
    * 좁은 화면에서는 마이크만 화면 맨 아래에 붙는다.
    */
   const voiceArea = (
-    <section id="voice" aria-label="말로 찾기" className={`flex flex-col gap-4 ${isHome ? "mx-auto w-full max-w-[760px] text-center" : "w-full max-w-[960px]"}`}>
+    <section
+      id="voice"
+      aria-label="말로 찾기"
+      className={`flex flex-col gap-4 ${isHome ? "mx-auto my-auto w-full max-w-[760px] gap-6 py-6 text-center max-[960px]:my-0" : "w-full max-w-[960px]"}`}
+    >
       {isHome && (
         <div className="flex flex-col gap-2">
           <h1 ref={headingRef} tabIndex={-1} className="m-0 text-[44px] font-extrabold leading-tight tracking-[-0.5px] max-[960px]:text-[30px] max-[420px]:text-[26px]">
             어떤 운동 영상을 찾을까요?
           </h1>
-          <p className="m-0 text-[20px] text-ink-2">큰 버튼을 누르고 말하거나, 아래 검색창에 써 주세요.</p>
+          <p className="m-0 text-[20px] text-ink-2">“{WAKE_WORD}”라고 부르거나 큰 버튼을 누르고 말해 주세요.</p>
         </div>
       )}
 
@@ -1083,36 +1170,21 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
         </button>
         <p role="status" className="m-0 text-[18px] text-ink-2 max-[960px]:text-center max-[960px]:text-[16px]">
           {thinking ? "답을 생각하고 있어요…" : voiceStatus}
-          <span className="max-[960px]:hidden"> · 마이크 권한: {micPermissionText(mic ?? "unknown").label}</span>
         </p>
-        <button
-          type="button"
-          onClick={() => setWakeEnabled(!wakeEnabled)}
-          aria-pressed={wakeEnabled}
-          className="m-0 self-start text-[17px] font-bold text-info underline decoration-2 underline-offset-[5px] hover:text-info-light max-[960px]:self-center max-[960px]:text-[15px]"
-        >
-          부르면 듣기(“{WAKE_WORD}”): {wakeEnabled ? (listening ? "켜짐 · 듣는 중" : "켜짐 · 마이크 허용 필요") : "꺼짐"}
-        </button>
       </div>
 
-      <p className="m-0 text-[17px] text-ink-3">
-        이렇게 말해 보세요: {hints.map((h) => `“${h}”`).join(", ")}
-      </p>
+      {/* 시작 화면은 말하기와 검색창만 둔다. 예시 말·마이크 안내·말 속도는 다른 화면에서 보인다 (예시 말은 인사말로도 읽어 준다) */}
+      {!isHome && <p className="m-0 text-[17px] text-ink-3">이렇게 말해 보세요: {hints.map((h) => `“${h}”`).join(", ")}</p>}
 
-      {/* 마이크 안내: 시작 화면에서는 크게, 다른 화면에서는 한 줄로 (영상 목록이 밀리지 않게) */}
-      {mic !== null && mic !== "granted" &&
-        (isHome ? (
-          <MicPermissionCard state={mic} onRequest={() => void askMicPermission()} />
-        ) : (
-          micPermissionText(mic).canRequest && (
-            <p className="m-0 text-[17px] text-ink-2">
-              마이크 권한: {micPermissionText(mic).label}.{" "}
-              <button type="button" onClick={() => void askMicPermission()} className="font-bold text-info underline decoration-2 underline-offset-[5px] hover:text-info-light">
-                {mic === "denied" ? "다시 허용하는 방법 듣기" : "마이크 사용 허용하기"}
-              </button>
-            </p>
-          )
-        ))}
+      {/* 마이크 안내: 한 줄로 (화면을 가리지 않게). 큰 버튼을 누르면 허용을 묻는다 */}
+      {!isHome && mic !== null && mic !== "granted" && micPermissionText(mic).canRequest && (
+        <p className="m-0 text-[17px] text-ink-2">
+          마이크 권한: {micPermissionText(mic).label}.{" "}
+          <button type="button" onClick={() => void askMicPermission()} className="font-bold text-info underline decoration-2 underline-offset-[5px] hover:text-info-light">
+            {mic === "denied" ? "다시 허용하는 방법 듣기" : "마이크 사용 허용하기"}
+          </button>
+        </p>
+      )}
 
       <form role="search" onSubmit={submitSearch} className="flex gap-3 max-[520px]:flex-col">
         <label htmlFor="search" className="sr-only">
@@ -1132,19 +1204,51 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
         </Button>
       </form>
 
-      <div className={`flex flex-col gap-1.5 rounded-2xl border-2 border-accent bg-panel px-5 py-4 ${isHome ? "text-left" : ""}`}>
-        <h2 id="last-said-title" className="m-0 text-[16px] font-bold text-ink-3">
-          방금 안내
-        </h2>
-        <p className="m-0 whitespace-pre-line text-[20px] leading-[1.55]">{lastSaid}</p>
+      {/* 시작 화면: 눌러서 바로 해 볼 수 있는 예시 말과 모든 영상 보기 (말하기·검색창 아래에 작게) */}
+      {isHome && (
+        <div className="flex flex-col items-center gap-4 pt-2">
+          <p className="m-0 text-[17px] font-bold text-ink-3">이렇게 말해 보세요</p>
+          <ul className="m-0 flex list-none flex-wrap justify-center gap-3 p-0">
+            {hints.map((h) => (
+              <li key={h}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // 정해진 예시 말이라 에이전트를 거치지 않고 바로 처리한다 (곧바로 화면이 바뀌게)
+                    addMessage("me", h);
+                    setLastHeard(h);
+                    // 검색창과 같이: 영상 하나로 좁혀지는 "○○ 시작"은 바로 시작하고, 나머지(여러 개, 분류)는 검색 결과로 간다
+                    const intent = parseIntent(h, exercises ?? []);
+                    if (intent.type === "OPEN" && intent.autoplay) runIntent(intent, h);
+                    else goSearch(h);
+                  }}
+                  className="min-h-[52px] rounded-full border-2 border-control bg-panel px-5 text-[18px] font-bold text-ink hover:border-accent hover:bg-hover"
+                >
+                  “{h}”
+                </button>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={() => runIntent({ type: "VIDEOS" })}
+            className="mt-2 inline-flex min-h-[48px] items-center gap-2 text-[18px] font-bold text-info underline decoration-2 underline-offset-[6px] hover:text-info-light"
+          >
+            <Icon d={ICONS.list} size={22} />
+            모든 운동 영상 보기
+          </button>
+        </div>
+      )}
+
+      {/* 앱이 한 말은 소리로 듣고(음성 안내를 끄면 스크린리더가 읽는다), 화면에는 다시 듣기와 말 속도만 둔다 */}
+      {!isHome && (
         <p className="m-0 flex flex-wrap items-center gap-x-4 gap-y-1 text-[16px] text-ink-3">
-          <span>내가 한 말: {lastHeard ?? "아직 없음"}</span>
           <button
             type="button"
             onClick={() => void speak(lastSaid, { rate: rateRef.current })}
             className="font-bold text-info underline decoration-2 underline-offset-[5px] hover:text-info-light"
           >
-            다시 듣기
+            방금 안내 다시 듣기
           </button>
           <span className="flex items-center gap-2">
             말 속도 {rate.toFixed(2)}배
@@ -1156,7 +1260,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
             </button>
           </span>
         </p>
-      </div>
+      )}
     </section>
   );
 
@@ -1174,48 +1278,83 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           {announce}
         </div>
 
-        {/* ── 머리말: 이름, 메뉴 (운동 찾기 · 콘텐츠 올리기 · 내 강의 · 계정 · 음성 안내) ── */}
+        {/* ── 머리말: 이름, 메뉴 버튼 (운동 찾기 · 콘텐츠 올리기 · 내 동작 · 계정 · 음성 안내) ── */}
         <header className="border-b-2 border-line">
-          <div className="mx-auto flex max-w-[1280px] flex-nowrap items-center gap-x-6 gap-y-3 px-4 py-4 max-[1100px]:flex-wrap">
+          <div className="mx-auto flex max-w-[1280px] flex-nowrap items-center gap-x-6 px-4 py-4">
             <Brand />
-            <nav aria-label="메뉴" className="ml-auto flex flex-nowrap items-center gap-2 max-[1100px]:ml-0 max-[1100px]:w-full max-[1100px]:flex-wrap">
-              <HeaderTab current={mode === "consume" && pathname !== "/courses" && pathname !== "/account"} icon={ICONS.search} onClick={() => runIntent({ type: "CONSUME" })}>
-                운동 찾기
-              </HeaderTab>
-              <HeaderTab current={mode === "supply"} icon={ICONS.upload} onClick={() => runIntent({ type: "SUPPLY" })}>
-                콘텐츠 올리기
-              </HeaderTab>
-              <HeaderTab current={pathname === "/courses"} icon={ICONS.book} onClick={() => runIntent({ type: "COURSES", courseId: null, learned: true })}>
-                내 동작
-              </HeaderTab>
+            {/* 메뉴: 세 줄 버튼 하나. 누르면 아래에 목록이 열린다 (Esc나 바깥을 누르면 닫힌다) */}
+            <div ref={menuRef} className="relative ml-auto">
               <button
+                ref={menuButtonRef}
                 type="button"
-                onClick={() => runIntent({ type: "ACCOUNT" })}
-                aria-current={pathname === "/account" ? "page" : undefined}
-                className="flex min-h-[56px] items-center gap-2.5 whitespace-nowrap rounded-[14px] border-[3px] border-info bg-bg px-5 font-bold text-info hover:bg-info-tint active:bg-info active:text-bg max-[1100px]:flex-[1_1_150px] max-[1100px]:justify-center"
+                onClick={() => setMenuOpen((v) => !v)}
+                aria-expanded={menuOpen}
+                aria-controls="site-menu"
+                className={`flex min-h-[56px] items-center gap-2.5 whitespace-nowrap rounded-[14px] border-[3px] px-5 font-bold ${
+                  menuOpen ? "border-accent bg-accent text-bg hover:bg-accent-hover" : "border-ink bg-bg text-ink hover:border-accent hover:bg-hover"
+                }`}
               >
-                <Icon d={account ? ICONS.user : ICONS.login} />
-                <span>{account ? `${account.name}님` : "로그인"}</span>
+                <Icon d={menuOpen ? ICONS.close : ICONS.menu} />
+                <span>{menuOpen ? "메뉴 닫기" : "메뉴"}</span>
               </button>
-              {account?.adminRole && (
-                <Link
-                  href="/admin"
-                  className="flex min-h-[56px] items-center gap-2.5 whitespace-nowrap rounded-[14px] border-[3px] border-info bg-bg px-5 font-bold !text-info no-underline hover:bg-info-tint max-[1100px]:flex-[1_1_150px] max-[1100px]:justify-center"
+              {menuOpen && (
+                <nav
+                  id="site-menu"
+                  aria-label="메뉴"
+                  className="absolute right-0 top-[calc(100%+10px)] z-30 w-[min(360px,calc(100vw-32px))] rounded-2xl border-2 border-line bg-panel p-3 shadow-[0_12px_32px_rgba(0,0,0,0.45)]"
                 >
-                  <Icon d={ICONS.shield} />
-                  <span>관리자</span>
-                </Link>
+                  <ul className="m-0 flex list-none flex-col gap-2 p-0">
+                    <MenuItem
+                      icon={ICONS.search}
+                      current={mode === "consume" && pathname !== "/courses" && pathname !== "/account" && pathname !== VIDEOS_PATH}
+                      onClick={() => pickMenu(() => runIntent({ type: "CONSUME" }))}
+                    >
+                      운동 찾기
+                    </MenuItem>
+                    <MenuItem icon={ICONS.list} current={pathname === VIDEOS_PATH} onClick={() => pickMenu(() => runIntent({ type: "VIDEOS" }))}>
+                      모든 운동 영상
+                    </MenuItem>
+                    <MenuItem icon={ICONS.upload} current={mode === "supply"} onClick={() => pickMenu(() => runIntent({ type: "SUPPLY" }))}>
+                      콘텐츠 올리기
+                    </MenuItem>
+                    <MenuItem
+                      icon={ICONS.book}
+                      current={pathname === "/courses"}
+                      onClick={() =>
+                        pickMenu(() =>
+                          runIntent({
+                            type: "COURSES",
+                            courseId: null,
+                            learned: true,
+                          }),
+                        )
+                      }
+                    >
+                      내 동작
+                    </MenuItem>
+                    <MenuItem icon={account ? ICONS.user : ICONS.login} current={pathname === "/account"} onClick={() => pickMenu(() => runIntent({ type: "ACCOUNT" }))}>
+                      {account ? `${account.name}님 (내 계정)` : "로그인"}
+                    </MenuItem>
+                    {account?.adminRole && (
+                      <MenuItem icon={ICONS.shield} current={false} onClick={() => pickMenu(() => router.push("/admin"))}>
+                        관리자 화면
+                      </MenuItem>
+                    )}
+                    <MenuItem
+                      icon={speech.enabled ? ICONS.speaker : ICONS.speakerOff}
+                      current={false}
+                      pressed={speech.enabled}
+                      onClick={() => pickMenu(() => setTts(!speech.enabled))}
+                    >
+                      음성 안내: {speech.enabled ? "켜짐" : "꺼짐"}
+                    </MenuItem>
+                    <MenuItem icon={ICONS.chat} current={false} pressed={wakeEnabled} onClick={() => pickMenu(() => setWakeEnabled(!wakeEnabled))}>
+                      부르면 듣기(“{WAKE_WORD}”): {wakeEnabled ? "켜짐" : "꺼짐"}
+                    </MenuItem>
+                  </ul>
+                </nav>
               )}
-              <button
-                type="button"
-                onClick={() => setTts(!speech.enabled)}
-                aria-pressed={speech.enabled}
-                className="flex min-h-[56px] items-center gap-2.5 whitespace-nowrap px-2.5 font-bold text-info underline decoration-2 underline-offset-[5px] hover:text-info-light hover:decoration-[3px] max-[1100px]:flex-[1_1_150px] max-[1100px]:justify-center"
-              >
-                <Icon d={speech.enabled ? ICONS.speaker : ICONS.speakerOff} />
-                <span>음성 안내: {speech.enabled ? "켜짐" : "꺼짐"}</span>
-              </button>
-            </nav>
+            </div>
           </div>
         </header>
 
@@ -1231,57 +1370,6 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
                 {mode === "supply" ? "내 콘텐츠로" : "처음으로"}
               </Button>
             </nav>
-          )}
-
-          {/* ── 시작 화면: 분류로 바로 찾기, 모든 운동 영상 ── */}
-          {isHome && (
-            <>
-              <section aria-labelledby="category-title" className="flex flex-col gap-4">
-                <h2 id="category-title" className="m-0 text-[24px] font-extrabold">
-                  분류로 찾기
-                </h2>
-                <div className="flex flex-wrap gap-3">
-                  {EXERCISE_CATEGORIES.map((c) => (
-                    <Button key={c} tone="line" block={false} onClick={() => goSearch(EXERCISE_CATEGORY_LABELS[c])} className="px-6">
-                      {EXERCISE_CATEGORY_LABELS[c]}
-                    </Button>
-                  ))}
-                </div>
-              </section>
-
-              <Section id="videos-title" title={`모든 운동 영상 ${exercises ? `${all.length}개` : ""}`}>
-                {loadError ? (
-                  <>
-                    <p role="alert" className="m-0 text-ink-2">
-                      영상 목록을 불러오지 못했어요. {loadError}
-                    </p>
-                    <Button tone="soft" block={false} onClick={() => void loadExercises()}>
-                      다시 시도
-                    </Button>
-                  </>
-                ) : exercises === null ? (
-                  <p className="m-0 text-ink-2">영상 목록을 불러오는 중이에요.</p>
-                ) : all.length === 0 ? (
-                  <p className="m-0 text-ink-2">아직 공개된 운동 영상이 없어요.</p>
-                ) : (
-                  <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-x-5 gap-y-8 p-0">
-                    {all.map((e) => (
-                      <li key={e.id}>
-                        <VideoCard
-                          exercise={e}
-                          level={levelOf(e)}
-                          onOpen={() => {
-                            addMessage("me", `${e.title} 시작`);
-                            setLastHeard(`${e.title} 시작`);
-                            openExercise(e.id, true);
-                          }}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </Section>
-            </>
           )}
 
           {/* ── 시청 화면: 왼쪽 영상·조작·단계, 오른쪽 다음 영상 ── */}
@@ -1445,39 +1533,22 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
   );
 }
 
-/** 마이크를 아직 쓸 수 없을 때 본문 위쪽에 보여 주는 안내 */
-function MicPermissionCard({ state, onRequest }: { state: MicPermission; onRequest: () => void }) {
-  const text = micPermissionText(state);
-  return (
-    <section aria-labelledby="mic-permission-title" className="flex flex-col gap-4 rounded-[20px] border-2 border-info bg-panel p-6 text-left">
-      <h2 id="mic-permission-title" className="m-0 text-[24px] font-extrabold">
-        마이크 사용 허용
-      </h2>
-      <p className="m-0 text-[18px] text-ink-2">
-        <span className="font-bold text-ink">마이크 권한: {text.label}.</span> {text.help}
-      </p>
-      {text.canRequest && (
-        <Button tone="info" size="lg" icon={ICONS.check} onClick={onRequest} className="!min-h-[72px] !text-[23px]">
-          {state === "denied" ? "다시 확인하기" : "마이크 사용 허용하기"}
-        </Button>
-      )}
-    </section>
-  );
-}
-
 /** 머리말의 화면 종류 탭. 지금 화면이면 노랑 바탕 + aria-current */
-function HeaderTab({ current, icon, onClick, children }: { current: boolean; icon: string; onClick: () => void; children: ReactNode }) {
+function MenuItem({ current, pressed, icon, onClick, children }: { current: boolean; pressed?: boolean; icon: string; onClick: () => void; children: ReactNode }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-current={current ? "page" : undefined}
-      className={`flex min-h-[56px] items-center gap-2.5 whitespace-nowrap rounded-[14px] border-[3px] px-[22px] font-bold max-[960px]:flex-[1_1_150px] max-[960px]:justify-center ${
-        current ? "border-accent bg-accent text-bg hover:border-accent-hover hover:bg-accent-hover" : "border-ink bg-bg text-ink hover:border-accent hover:bg-hover"
-      }`}
-    >
-      <Icon d={icon} />
-      <span>{children}</span>
-    </button>
+    <li>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-current={current ? "page" : undefined}
+        aria-pressed={pressed}
+        className={`flex min-h-[60px] w-full items-center gap-3 rounded-xl border-2 px-4 text-left text-[20px] font-bold ${
+          current ? "border-accent bg-accent text-bg hover:bg-accent-hover" : "border-transparent bg-bg text-ink hover:border-accent hover:bg-hover"
+        }`}
+      >
+        <Icon d={icon} />
+        <span>{children}</span>
+      </button>
+    </li>
   );
 }
