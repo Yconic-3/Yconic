@@ -155,3 +155,35 @@ export function createClaudeModel({ settings, onUsage = logUsage, client }: Clau
     },
   };
 }
+
+/**
+ * 하루에 부를 수 있는 횟수를 정한다 (공개 링크로 열어 둘 때 비용이 끝없이 늘지 않게).
+ * 한도를 넘으면 AI_BUSY 오류를 던진다. 부르는 쪽은 이미 이 오류에서 규칙 기반으로 돌아간다.
+ * 날짜는 서버 시각 기준으로 자정에 다시 센다. limit이 없거나 0 이하면 그대로 돌려준다.
+ */
+export function withDailyLimit(model: AiModel, limit: number | undefined, label: string, now: () => Date = () => new Date()): AiModel {
+  if (!limit || limit <= 0 || !Number.isFinite(limit)) return model;
+  let day = "";
+  let used = 0;
+  return {
+    name: model.name,
+    async run(request, options) {
+      const today = now().toISOString().slice(0, 10);
+      if (today !== day) {
+        day = today;
+        used = 0;
+      }
+      if (used >= limit) {
+        throw new AiError("AI_BUSY", `오늘 ${label} AI 사용 한도(${limit}번)를 다 썼습니다. 내일 다시 쓸 수 있습니다.`);
+      }
+      used++;
+      return model.run(request, options);
+    },
+  };
+}
+
+/** 환경 변수의 한도 값 (없거나 숫자가 아니면 undefined) */
+export function limitFromEnv(value: string | undefined): number | undefined {
+  const n = Number(value);
+  return value && Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+}

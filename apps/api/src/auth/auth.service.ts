@@ -25,7 +25,12 @@ export class AuthService {
     @Inject(CONFIG) private readonly config: ApiConfig,
   ) {}
 
-  async login(email: unknown, password: unknown): Promise<LoginResponse> {
+  /**
+   * viaPublicLink: 공개 링크(Cloudflare 임시 주소)로 들어온 요청이면 true.
+   * 저장소가 공개라 예시 관리자 계정의 비밀번호도 공개되어 있으므로, 공개 링크에서는 관리자 계정으로 로그인할 수 없다.
+   * 관리자 화면은 이 컴퓨터(localhost)에서만 쓴다.
+   */
+  async login(email: unknown, password: unknown, viaPublicLink = false): Promise<LoginResponse> {
     if (typeof email !== "string" || typeof password !== "string" || !email.trim() || !password) {
       throw new ApiError("VALIDATION", "이메일과 비밀번호를 모두 입력해 주세요.");
     }
@@ -36,6 +41,9 @@ export class AuthService {
     // 이메일이 없는 경우와 비밀번호가 틀린 경우를 구분해서 알려 준다 (시연 단계의 화면 문구와 맞춤).
     if (!row) throw new ApiError("UNAUTHORIZED", "등록되지 않은 이메일입니다.");
     if (!(await verifyPassword(password, row.passwordHash))) throw new ApiError("UNAUTHORIZED", "비밀번호가 맞지 않습니다.");
+    if (viaPublicLink && row.adminRole) {
+      throw new ApiError("FORBIDDEN", "공개 링크에서는 관리자 계정으로 로그인할 수 없습니다. 일반 회원으로 로그인해 주세요.");
+    }
 
     const token = randomBytes(32).toString("base64url");
     const expiresAt = new Date(Date.now() + this.config.sessionDays * 24 * 60 * 60 * 1000);

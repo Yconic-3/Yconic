@@ -84,3 +84,6 @@ export function searchExercises<T extends Searchable>(list: T[], query: string):
 export function searchPath(query: string): string {
   return `/search?q=${encodeURIComponent(query.trim())}`;
 }
+
+/** 모든 운동 영상 화면 (메뉴의 '모든 운동 영상') */
+export const VIDEOS_PATH = "/videos";

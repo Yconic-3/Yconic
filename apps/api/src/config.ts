@@ -26,7 +26,8 @@ export function loadConfig(overrides: Partial<ApiConfig> = {}): ApiConfig {
   return {
     port,
     webOrigins: (process.env.WEB_ORIGIN ?? "http://localhost:3000").split(",").map((s) => s.trim()),
-    publicUrl: process.env.API_PUBLIC_URL ?? `http://localhost:${port}`,
+    // 영상 재생 주소의 앞부분. 기본은 웹앱이 대신 연결하는 /api 라서, localhost로 열든 공개 링크로 열든 영상이 나온다 (0010)
+    publicUrl: process.env.API_PUBLIC_URL ?? "/api",
     storageDir: process.env.STORAGE_DIR ?? join(apiRoot, "storage"),
     maxVideoBytes: 2 * 1024 * 1024 * 1024,
     sessionDays: 30,

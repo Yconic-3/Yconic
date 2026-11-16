@@ -1,4 +1,4 @@
-import { createClaudeModel } from "@yconic/ai-common";
+import { createClaudeModel, limitFromEnv, withDailyLimit } from "@yconic/ai-common";
 import { createHttpBackend } from "./backend";
 import { loadConfig } from "./config";
 import { createAgentServer } from "./server";
@@ -12,7 +12,9 @@ try {
 
 const config = loadConfig();
 const { apiKey } = config.ai;
-const model = apiKey ? createClaudeModel({ settings: { ...config.ai, apiKey } }) : null;
+// 하루 사용 한도 (공개 링크로 열어 둘 때). 넘으면 웹앱이 규칙 기반 해석으로 돌아간다
+const dailyLimit = limitFromEnv(process.env.AI_DAILY_LIMIT);
+const model = apiKey ? withDailyLimit(createClaudeModel({ settings: { ...config.ai, apiKey } }), dailyLimit, "대화") : null;
 const server = createAgentServer({ config, model, backend: createHttpBackend(config.apiBaseUrl) });
 
 server.listen(config.port, () => {
@@ -22,6 +24,7 @@ server.listen(config.port, () => {
       ? `[user-agent] AI 켜짐: ${config.ai.model}, 생각 깊이 ${config.ai.effort}`
       : "[user-agent] AI 꺼짐: ANTHROPIC_API_KEY가 없어 웹앱은 규칙 기반 해석을 씁니다.",
   );
+  if (model && dailyLimit) console.log(`[user-agent] 하루 AI 한도: ${dailyLimit}번`);
 });
 
 const shutdown = () => server.close(() => process.exit(0));

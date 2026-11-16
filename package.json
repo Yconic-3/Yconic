@@ -18,7 +18,8 @@
     "db:generate": "pnpm --filter @yconic/database db:generate",
     "db:migrate": "pnpm --filter @yconic/database db:migrate",
     "db:seed": "pnpm --filter @yconic/database db:seed",
-    "db:setup": "pnpm --filter @yconic/database db:setup"
+    "db:setup": "pnpm --filter @yconic/database db:setup",
+    "share": "node scripts/share.mjs"
   },
   "devDependencies": {
     "turbo": "^2.11.10",

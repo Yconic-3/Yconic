@@ -112,7 +112,9 @@ export function createAgentServer({ config, model, backend, quiet }: AgentServer
         return;
       }
       if (req.method === "POST" && path === "/chat") {
-        if (!allow(req.socket.remoteAddress ?? "?")) {
+        // 공개 링크(Cloudflare)를 거치면 모두 같은 주소에서 오므로, Cloudflare가 알려 주는 실제 접속 주소로 센다
+        const ip = typeof req.headers["cf-connecting-ip"] === "string" ? req.headers["cf-connecting-ip"] : (req.socket.remoteAddress ?? "?");
+        if (!allow(ip)) {
           throw new HttpError(429, "RATE_LIMITED", "요청이 너무 많습니다. 잠시 뒤 다시 말씀해 주세요.");
         }
         const request = parseChatRequest(await readJson(req));

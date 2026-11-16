@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { ADMIN_ROLE_LABELS } from "@yconic/shared-types";
+import { isShareMode } from "@/lib/api-mode";
 import { DEMO_ACCOUNTS, signIn, type SignedInAccount } from "@/lib/auth";
 import { Button, ICONS, INPUT_CLASS, Section } from "./ui";
 
@@ -80,9 +81,13 @@ export function LoginForm({ onSignedIn, idPrefix = "login" }: { onSignedIn: (acc
       </Section>
 
       <Section id={`${idPrefix}-demo-title`} title="체험용 계정">
-        <p className="m-0 text-[18px] text-ink-2">개발·시연용 계정입니다 (DB 처음 데이터와 같습니다). 누르면 그 계정으로 바로 로그인합니다.</p>
+        <p className="m-0 text-[18px] text-ink-2">
+          {isShareMode()
+            ? "누구나 쓰는 체험 계정입니다. 누르면 바로 로그인합니다. 관리자 화면은 공개 링크에서 쓸 수 없어요."
+            : "개발·시연용 계정입니다 (DB 처음 데이터와 같습니다). 누르면 그 계정으로 바로 로그인합니다."}
+        </p>
         <ul className="m-0 flex list-none flex-col gap-3.5 p-0">
-          {DEMO_ACCOUNTS.map((a) => (
+          {(isShareMode() ? DEMO_ACCOUNTS.filter((a) => !a.adminRole) : DEMO_ACCOUNTS).map((a) => (
             <li key={a.id}>
               <button
                 type="button"

@@ -42,6 +42,10 @@ export interface ShellApi {
   setPage(info: PageInfo | null): void;
   /** 공개 운동 영상 전체. 불러오기 전에는 null */
   exercises: PublishedExercise[] | null;
+  /** 운동 영상 목록을 불러오지 못했을 때의 이유 */
+  exercisesError: string | null;
+  /** 운동 영상 목록을 다시 불러온다 */
+  reloadExercises(): void;
   /** 이 운동을 짧게(영상 속 동작을 모두 배움) 또는 자세하게 안내하는지 */
   levelOf(e: Pick<PublishedExercise, "segments">): GuideLevel;
   /** 시청 화면으로 간다. autoplay면 안내를 바로 시작한다 */

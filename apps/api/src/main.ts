@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { aiSettingsFromEnv, createClaudeModel } from "@yconic/ai-common";
+import { aiSettingsFromEnv, createClaudeModel, limitFromEnv, withDailyLimit } from "@yconic/ai-common";
 import { createMockAnalyzer } from "@yconic/content-analysis";
 import { createClaudeVideoAnalyzer, createLocalMediaTools } from "@yconic/content-analysis/claude";
 import { connectDatabase, databaseUrl } from "@yconic/database";
@@ -36,13 +36,16 @@ for (let attempt = 1; ; attempt++) {
 const aiSettings = aiSettingsFromEnv();
 const ai = aiSettings.apiKey ? createClaudeModel({ settings: { ...aiSettings, apiKey: aiSettings.apiKey } }) : null;
 const useClaudeAnalyzer = !!ai && (process.env.VIDEO_ANALYZER ?? "claude") === "claude";
+// 하루 사용 한도 (공개 링크로 열어 둘 때). 영상 분석과 맞춤 안내를 따로 센다
+const analysisLimit = limitFromEnv(process.env.AI_DAILY_LIMIT_ANALYSIS);
+const guidesLimit = limitFromEnv(process.env.AI_DAILY_LIMIT_GUIDES);
 const analyzer = useClaudeAnalyzer
   ? createClaudeVideoAnalyzer({
-      model: ai,
+      model: withDailyLimit(ai, analysisLimit, "영상 분석"),
       media: createLocalMediaTools({ ffmpeg: process.env.FFMPEG, python: process.env.PYTHON, whisperModel: process.env.WHISPER_MODEL }),
     })
   : createMockAnalyzer();
-const app = await createApp({ config, db, analyzer, ai });
+const app = await createApp({ config, db, analyzer, ai: ai && withDailyLimit(ai, guidesLimit, "맞춤 안내") });
 
 try {
   await app.listen(config.port);
@@ -59,6 +62,9 @@ console.log(
     : "[api] 영상 분석: 모의 분석기 (ANTHROPIC_API_KEY가 없거나 VIDEO_ANALYZER=mock)",
 );
 console.log(ai ? "[api] 맞춤 안내: AI가 사용자별로 다시 씀" : "[api] 맞춤 안내: 규칙으로 고름 (API 키 없음)");
+if (ai && (analysisLimit || guidesLimit)) {
+  console.log(`[api] 하루 AI 한도: 영상 분석 ${analysisLimit ?? "제한 없음"}번, 맞춤 안내 ${guidesLimit ?? "제한 없음"}번`);
+}
 
 const shutdown = async () => {
   await app.close();
