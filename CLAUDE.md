@@ -31,6 +31,7 @@
 - 설치: `pnpm install`
 - 전체 테스트: `pnpm test` / 타입 검사: `pnpm typecheck`
 - **전부 한 번에 켜기: `pnpm dev`** (DB·API·AI 에이전트·웹앱). Windows에서는 저장소 맨 위의 `실행하기.cmd`를 더블클릭해도 된다. DB를 켤 때 마이그레이션은 자동으로 반영되고, 처음 만든 DB에는 예시 데이터가 들어간다
+- **다른 사람에게 보여 주기: `pnpm share`** (또는 `공유하기.cmd`). `pnpm dev`를 켜 둔 채로 실행하면 임시 https 공개 링크를 알려 준다. 공개 링크에서는 관리자 로그인이 막히고 AI는 하루 한도 안에서만 쓴다 (`docs/decisions/0010-임시-공개-링크.md`)
 - PowerShell이 `pnpm`을 보안 오류로 막으면 `pnpm.cmd dev`처럼 `.cmd`를 붙여 실행한다
 - 데이터베이스: `pnpm db:start`(켜기, 창을 열어 둔다) → 처음 한 번 `pnpm db:setup`(테이블+예시 데이터). 예시 데이터로 되돌리기 `pnpm db:seed`
 - API 실행: `pnpm dev:api` → http://localhost:4000/health
