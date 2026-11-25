@@ -97,6 +97,20 @@ export interface MovementKnowledge {
   practiceCount: number;
   /** 강사에게 배운 용어나 신호 (예: "엉덩이 뒤로 = 힙 힌지"). AI 맞춤 안내가 이 말을 쓴다 */
   terms: string;
+  /**
+   * 이 동작 단계를 다시 들었거나 "어려워요"라고 한 횟수 (docs/decisions/0012).
+   * 쌓이면 이 동작은 더 쉬운 말로, 한 번에 한 가지씩 천천히 안내한다.
+   */
+  struggleCount: number;
+}
+
+/** 이 횟수만큼 다시 듣거나 어렵다고 하면 그 동작을 '어려워하는 동작'으로 본다 */
+export const STRUGGLE_THRESHOLD = 2;
+
+/** 아직 익히지 않았고 어려워하는 동작인지 */
+export function findsHard(profile: LearningProfile | null, id: MovementId): boolean {
+  const k = profile?.movements.find((m) => m.movementId === id);
+  return !!k && k.struggleCount >= STRUGGLE_THRESHOLD && !knowsMovement(profile, id);
 }
 
 export interface LearningProfile {
@@ -130,6 +144,7 @@ export function ruleGuideText(segment: Pick<ExerciseSegment, "voiceGuide" | "con
  *   GET  /me/learning                          → LearningProfile
  *   PUT  /me/learning/movements/:movementId    SetMovementInput → LearningProfile
  *   POST /me/learning/practice                 RecordPracticeInput → LearningProfile
+ *   POST /me/learning/struggle                 RecordPracticeInput → LearningProfile  (다시 들음·어렵다고 함)
  *   GET  /me/guides/:exerciseId                → PersonalizedGuides  (공개 중인 운동만)
  */
 export interface PersonalizedSegmentGuide {

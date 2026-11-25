@@ -65,7 +65,7 @@ describe("학습 프로필 (/me/learning)", () => {
     expect((await me.get<LearningProfile>("/me/learning")).body.movements).toEqual([]);
 
     const said = await me.put<LearningProfile>("/me/learning/movements/squat", { known: true, terms: "엉덩이 뒤로 = 힙 힌지" });
-    expect(said.body.movements).toEqual([{ movementId: "squat", declared: true, sources: ["said"], practiceCount: 0, terms: "엉덩이 뒤로 = 힙 힌지" }]);
+    expect(said.body.movements).toEqual([{ movementId: "squat", declared: true, sources: ["said"], practiceCount: 0, terms: "엉덩이 뒤로 = 힙 힌지", struggleCount: 0 }]);
 
     await me.put("/me/courses", { courseIds: ["upper"] });
     const withCourse = (await me.get<LearningProfile>("/me/learning")).body;
@@ -132,6 +132,19 @@ describe("맞춤 안내 (/me/guides/:exerciseId)", () => {
     } finally {
       await s2.close();
     }
+  });
+
+  it("다시 듣거나 어렵다고 한 동작은 AI가 더 쉽게 다시 쓴다 (배운 동작이 없어도)", async () => {
+    const me = await member();
+    await me.post("/me/learning/struggle", { movementIds: ["squat"] });
+    const once = (await me.get<LearningProfile>("/me/learning")).body.movements.find((m) => m.movementId === "squat")!;
+    expect(once.struggleCount).toBe(1);
+    expect((await me.get<PersonalizedGuides>("/me/guides/c-squat")).body.generatedBy).toBe("rule"); // 한 번은 아직
+    await me.post("/me/learning/struggle", { movementIds: ["squat"] });
+    const g = (await me.get<PersonalizedGuides>("/me/guides/c-squat")).body;
+    expect(g.generatedBy).toBe("ai");
+    expect(g.segments.find((x) => x.segmentId === "c-squat-s2")!.reason).toMatch(/더 쉽고 천천히/);
+    expect(String(ai.calls[0]!.messages[0]!.content)).toMatch(/어려워하는 동작.*스쿼트/);
   });
 
   it("공개되지 않은 운동은 404", async () => {

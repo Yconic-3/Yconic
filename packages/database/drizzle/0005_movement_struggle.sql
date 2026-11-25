@@ -1,0 +1,1 @@
+ALTER TABLE "account_movements" ADD COLUMN "struggle_count" integer DEFAULT 0 NOT NULL;

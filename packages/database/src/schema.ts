@@ -103,6 +103,8 @@ export const accountMovements = pgTable(
     declared: boolean("declared").notNull().default(false),
     /** 앱에서 그 동작 단계를 끝까지 따라 한 횟수 */
     practiceCount: integer("practice_count").notNull().default(0),
+    /** 이 동작 단계를 다시 들었거나 "어려워요"라고 한 횟수. 쌓이면 더 쉽게 안내한다 (docs/decisions/0012) */
+    struggleCount: integer("struggle_count").notNull().default(0),
     /** 강사에게 배운 용어나 신호. AI 맞춤 안내가 쓴다 */
     terms: text("terms").notNull().default(""),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

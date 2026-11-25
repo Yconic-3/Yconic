@@ -12,6 +12,7 @@ import {
   ruleGuideText,
   segmentDurationSec,
   segmentGuideLevel,
+  findsHard,
   speechBudgetChars,
   type AuthAccount,
   type CourseId,
@@ -41,6 +42,8 @@ const PERSONALIZE_PROMPT = `너는 시각장애인을 위한 운동 앱의 맞�
 
 - level이 concise인 단계(그 사람이 배운 동작): 배운 사람답게 짧게 쓴다. 그 사람이 강사에게 배운 용어가 있으면 그 말을 쓴다. 동작 이름, 횟수, 속도 같은 핵심만 한두 문장.
 - level이 detailed인 단계(처음 하는 동작이거나 준비·휴식): 자세한 안내를 바탕으로 처음 하는 사람이 따라 할 수 있게 쓴다. 그 사람이 배운 동작과 비슷한 점이 있으면 "스쿼트에서 배운 대로 엉덩이를 뒤로 빼며"처럼 이어서 설명해 새 동작을 쉽게 익히게 한다.
+- 어려워하는 동작이 들어간 단계: 더 쉬운 말로, 한 문장에 한 가지 움직임만, "하나, 둘, 셋"처럼 세면서 천천히 쓴다. 그 사람이 아는 동작에 빗대면 좋다.
+- 쉬운 말로 쓴다: 어려운 운동 용어(고관절, 대퇴, 외전 등)는 몸의 느낌으로 풀어 쓴다 (예: "고관절을 접어" → "엉덩이를 뒤로 빼며 허리를 숙여"). 방향은 몸 기준(앞, 뒤, 오른쪽, 바닥 쪽)으로, 속도는 숫자로 말한다.
 - 주어진 안내에 없는 횟수·시간·동작을 지어내지 않는다. 주의사항과 안전 신호(아프면 멈추기 등)는 빼지 않는다.
 - 화면을 봐야 알 수 있는 표현(이렇게, 저렇게, 여기, 저기, 화면, 보이는, 보시는, 그림, 영상처럼)을 쓰지 않는다. 한국어 존댓말.
 - 의학적 진단이나 치료 효과를 말하지 않는다.
@@ -86,7 +89,7 @@ export class LearningService {
     const entry = (id: MovementId) => {
       let k = map.get(id);
       if (!k) {
-        k = { movementId: id, declared: false, sources: [], practiceCount: 0, terms: "" };
+        k = { movementId: id, declared: false, sources: [], practiceCount: 0, terms: "", struggleCount: 0 };
         map.set(id, k);
       }
       return k;
@@ -109,6 +112,7 @@ export class LearningService {
       k.practiceCount = r.practiceCount;
       if (r.practiceCount >= PRACTICE_THRESHOLD) k.sources.push("practice");
       k.terms = r.terms;
+      k.struggleCount = r.struggleCount;
     }
     return { movements: [...map.values()].sort((a, b) => a.movementId.localeCompare(b.movementId)) };
   }
@@ -138,6 +142,20 @@ export class LearningService {
     return this.getProfile(account);
   }
 
+  /** 그 동작 단계를 다시 들었거나 "어려워요"라고 했다. 쌓이면 더 쉬운 말로 안내한다 (docs/decisions/0012) */
+  async recordStruggle(account: AuthAccount, movementIds: MovementId[]): Promise<LearningProfile> {
+    for (const movementId of new Set(movementIds)) {
+      await this.db
+        .insert(accountMovements)
+        .values({ accountId: account.id, movementId, struggleCount: 1 })
+        .onConflictDoUpdate({
+          target: [accountMovements.accountId, accountMovements.movementId],
+          set: { struggleCount: sql`${accountMovements.struggleCount} + 1`, updatedAt: new Date() },
+        });
+    }
+    return this.getProfile(account);
+  }
+
   /** 공개 운동 하나의 단계별 맞춤 안내 */
   async getGuides(account: AuthAccount, exerciseId: string): Promise<PersonalizedGuides> {
     const [content] = await loadContents(this.db, this.config, and(eq(contents.id, exerciseId), eq(contents.status, "PUBLISHED")));
@@ -148,7 +166,7 @@ export class LearningService {
     const relevant = [...new Set(content.segments.flatMap((s) => s.movements ?? []))].sort();
     const knowledge = relevant.map((m) => {
       const k = profile.movements.find((x) => x.movementId === m);
-      return { m, known: knowsMovement(profile, m), terms: k?.terms ?? "" };
+      return { m, known: knowsMovement(profile, m), hard: findsHard(profile, m), terms: k?.terms ?? "" };
     });
     const profileKey = createHash("sha256")
       .update(JSON.stringify({ v: content.version, u: content.updatedAt, k: knowledge, ai: this.ai?.name ?? null }))
@@ -166,7 +184,7 @@ export class LearningService {
     let guides = rule;
     let generatedBy: "ai" | "rule" = "rule";
     // 아는 동작이 하나도 없으면 미리 만든 자세한 안내 그대로가 가장 좋다 (AI를 부르지 않는다)
-    const worthAi = this.ai && knowledge.some((k) => k.known || k.terms);
+    const worthAi = this.ai && knowledge.some((k) => k.known || k.hard || k.terms);
     if (worthAi) {
       try {
         guides = await this.aiGuides(content, profile, rule);
@@ -199,6 +217,7 @@ export class LearningService {
           : "여러 번 따라 해서 익힌";
       return `${labels}: ${how} 동작이라 짧게`;
     }
+    if (ms.some((m) => findsHard(profile, m))) return `${labels}: 다시 들으신 동작이라 더 쉽고 천천히`;
     return `${labels}: 처음 하는 동작이라 자세히`;
   }
 
@@ -213,6 +232,8 @@ export class LearningService {
 
   private async aiGuides(content: ExerciseContent, profile: LearningProfile, rule: PersonalizedSegmentGuide[]): Promise<PersonalizedSegmentGuide[]> {
     const known = profile.movements.filter((k) => knowsMovement(profile, k.movementId));
+    const hard = profile.movements.filter((k) => findsHard(profile, k.movementId));
+    const hardText = hard.length ? `\n어려워하는 동작 (여러 번 다시 들었거나 어렵다고 함): ${hard.map((k) => movementLabel(k.movementId)).join(", ")}` : "";
     const profileText = known.length
       ? known
           .map((k) => {
@@ -223,6 +244,7 @@ export class LearningService {
           })
           .join("\n")
       : "(배운 동작 없음)";
+    const learnerText = profileText + hardText;
     const steps = content.segments
       .map((s, i) => {
         const r = rule[i]!;
@@ -240,7 +262,7 @@ export class LearningService {
     const message = await this.ai!.run(
       {
         system: PERSONALIZE_PROMPT,
-        messages: [{ role: "user", content: `<학습 프로필>\n${profileText}\n</학습 프로필>\n\n<운동>\n${content.title}\n\n${steps}\n</운동>` }],
+        messages: [{ role: "user", content: `<학습 프로필>\n${learnerText}\n</학습 프로필>\n\n<운동>\n${content.title}\n\n${steps}\n</운동>` }],
         max_tokens: 8000,
       },
       { effort: "low", jsonSchema: GUIDES_SCHEMA as unknown as Record<string, unknown>, timeoutMs: 90_000 },

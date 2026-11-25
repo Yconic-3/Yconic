@@ -35,6 +35,13 @@ export class MeController {
     return this.learning.recordPractice(account, parseRecordPractice(body).movementIds);
   }
 
+  /** 그 동작 단계를 다시 들었거나 "어려워요"라고 했다 (docs/decisions/0012) */
+  @Post("learning/struggle")
+  @HttpCode(200)
+  recordStruggle(@CurrentAccount() account: AuthAccount, @Body() body: unknown): Promise<LearningProfile> {
+    return this.learning.recordStruggle(account, parseRecordPractice(body).movementIds);
+  }
+
   @Get("guides/:exerciseId")
   getGuides(@CurrentAccount() account: AuthAccount, @Param("exerciseId") exerciseId: string): Promise<PersonalizedGuides> {
     return this.learning.getGuides(account, exerciseId);
