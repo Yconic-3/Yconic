@@ -23,6 +23,7 @@
 - **사용자 AI 에이전트는 `apps/user-agent`(포트 4100)이고 Claude는 `packages/ai-common`으로 부른다.** 에이전트는 DB를 만지지 않고 API의 공개 운동만 읽으며, 화면이 할 일만 돌려준다. API 키가 없으면 꺼지고 웹앱은 규칙 기반 해석을 쓴다 (`docs/decisions/0006-사용자-AI-에이전트.md`)
 - **영상 분석은 실제 분석기(ffmpeg 장면 + faster-whisper 받아쓰기 + Claude)다.** API에 `ANTHROPIC_API_KEY`가 없거나 `VIDEO_ANALYZER=mock`이면 모의 분석기. 단계마다 동작(`movements`)을 붙이고, 회원마다 아는 동작(내 동작)에 따라 단계별로 짧게/자세하게 안내하며 AI가 사람마다 다시 쓴다 (`docs/decisions/0008-실제-영상-분석과-동작-단위-맞춤-안내.md`)
 - **음성 안내를 켜면(시각장애인용) 강사가 말하는 부분은 영상 소리를 끄고 맞춤 안내가 대신 말한다. 영상과 앱의 소리는 겹치지 않는다. 끄면(일반 사용자) 원래 영상 그대로.** "소리벗"이라고 부르면 듣는다 (`docs/decisions/0009-강사-말-대신-맞춤-안내와-부르면-듣기.md`)
+- **운동 중에는 호출어 없이 듣고 말을 끝까지 기다린다(끼어들기·메아리 거르기). 단계가 끝나거나 말로 화면을 바꿀 때는 묻고 기다리며, 운동이 끝나면 다음 운동을 권한다.** 다시 듣거나 "어려워요"라고 한 동작은 더 쉽게 안내한다 (`docs/decisions/0012-운동-중-대화와-묻고-기다리기.md`)
 - 테이블 설명은 `docs/database.md`. 테이블을 바꾸면 `packages/database/src/schema.ts` 수정 → `pnpm db:generate`로 마이그레이션 생성 → `pnpm db:migrate`
 - 제작 작업기와 영상 저장은 아직 임시다 (API 서버 안 모듈, 서버 폴더 저장, 음성 파일 없이 기기 음성으로 읽기). 설계 문서의 BullMQ·S3·TTS로 바꿀 예정
 
@@ -32,6 +33,7 @@
 - 전체 테스트: `pnpm test` / 타입 검사: `pnpm typecheck`
 - **전부 한 번에 켜기: `pnpm dev`** (DB·API·AI 에이전트·웹앱). Windows에서는 저장소 맨 위의 `실행하기.cmd`를 더블클릭해도 된다. DB를 켤 때 마이그레이션은 자동으로 반영되고, 처음 만든 DB에는 예시 데이터가 들어간다
 - **다른 사람에게 보여 주기: `pnpm share`** (또는 `공유하기.cmd`). `pnpm dev`를 켜 둔 채로 실행하면 임시 https 공개 링크를 알려 준다. 공개 링크에서는 관리자 로그인이 막히고(시연용으로 열려면 `PUBLIC_LINK_ADMIN_LOGIN=allow` + `pnpm share:admin`) AI는 하루 한도 안에서만 쓴다 (`docs/decisions/0010-임시-공개-링크.md`)
+- **고정 공개 URL(Vercel)**: `apps/web`을 예시 데이터 + 웹앱 안 AI 대화로 올린다. 설정 방법은 `docs/deploy-vercel.md`
 - PowerShell이 `pnpm`을 보안 오류로 막으면 `pnpm.cmd dev`처럼 `.cmd`를 붙여 실행한다
 - 데이터베이스: `pnpm db:start`(켜기, 창을 열어 둔다) → 처음 한 번 `pnpm db:setup`(테이블+예시 데이터). 예시 데이터로 되돌리기 `pnpm db:seed`
 - API 실행: `pnpm dev:api` → http://localhost:4000/health
