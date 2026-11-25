@@ -120,3 +120,23 @@ describe("runUserAgent", () => {
     expect(res.actions).toHaveLength(5);
   });
 });
+
+describe("앱 상태 글: 이 사람과 지금 단계 안내", async () => {
+  const { appStateText } = await import("../src/prompt");
+  it("배운 동작·어려워하는 동작·지금 단계 안내를 함께 넣는다", () => {
+    const text = appStateText(
+      {
+        screen: "exercise",
+        exerciseId: null,
+        sessionState: "IN_PROGRESS",
+        segmentIndex: 0,
+        learner: { known: ["스쿼트"], hard: ["힙 힌지"], recent: ["의자 잡고 스쿼트"] },
+        currentGuide: "엉덩이를 뒤로 빼며 셋을 세는 동안 내려갑니다.",
+      },
+      [],
+    );
+    expect(text).toContain("배운 동작 스쿼트");
+    expect(text).toContain("어려워하는 동작 힙 힌지");
+    expect(text).toContain("최근에 한 운동 의자 잡고 스쿼트");
+  });
+});

@@ -26,7 +26,12 @@ function parseContext(v: unknown): AgentAppContext {
   const sessionState = EXERCISE_SESSION_STATES.find((s) => s === v.sessionState) ?? null;
   const segmentIndex =
     typeof v.segmentIndex === "number" && Number.isInteger(v.segmentIndex) && v.segmentIndex >= 0 ? v.segmentIndex : null;
-  return { screen, exerciseId, sessionState, segmentIndex };
+  // 이 사람에 대해 아는 것과 지금 단계 안내 (선택). 짧은 글 목록만 받는다
+  const names = (x: unknown): string[] =>
+    Array.isArray(x) ? x.filter((n): n is string => typeof n === "string").map((n) => n.slice(0, 40)).slice(0, 20) : [];
+  const learner = isObject(v.learner) ? { known: names(v.learner.known), hard: names(v.learner.hard), recent: names(v.learner.recent) } : undefined;
+  const currentGuide = typeof v.currentGuide === "string" && v.currentGuide.trim() ? v.currentGuide.trim().slice(0, 600) : undefined;
+  return { screen, exerciseId, sessionState, segmentIndex, ...(learner ? { learner } : {}), ...(currentGuide ? { currentGuide } : {}) };
 }
 
 function parseHistory(v: unknown): AgentTurn[] {
