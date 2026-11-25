@@ -320,10 +320,19 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
    * '방금 안내'에 남기고 소리 내어 읽는다. 끝까지 읽으면 true.
    * 음성 안내를 껐으면 스크린리더가 읽도록 알림 영역에도 넣는다 (켜져 있으면 소리와 겹치지 않게 넣지 않는다).
    */
+  /**
+   * 말 대신 글로 입력한 뒤에는 대답을 소리 내지 않고 글로만 보여 준다 (글로 쓰는 사람은 화면을 보는 사람).
+   * 다시 말로 하거나(마이크) 운동 단계 안내를 읽을 때는 소리를 낸다. 스크린리더에는 알림으로 알린다.
+   */
+  const quietRepliesRef = useRef(false);
   const say = useCallback(
-    (text: string, audioUrl?: string | null, opts?: { fitSec?: number }) => {
+    (text: string, audioUrl?: string | null, opts?: { fitSec?: number; guide?: boolean }) => {
       addMessage("bot", text);
       setLastSaid(text);
+      if (quietRepliesRef.current && !opts?.guide) {
+        setAnnounce(text);
+        return Promise.resolve(true);
+      }
       if (!speechEnabledRef.current) setAnnounce(text);
       // 단계 안내는 그 단계 안에 다 읽도록 말 속도를 맞춘다 (영상 속도에 맞추기)
       const rate = opts?.fitSec ? fitSpeechRate(text, opts.fitSec, rateRef.current) : rateRef.current;
@@ -377,7 +386,9 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     [accountId, exerciseId, guides, learning],
   );
   const guideOf = useCallback((s: ExerciseSegment) => guideFor(s).text, [guideFor]);
-  const session = useExerciseSession(exercise, videoRef, say, guideOf, {
+  // 운동 단계 안내는 글로 입력했더라도 소리 낸다 (운동은 화면을 보지 않고 따라 하므로)
+  const sayGuide = useCallback((text: string, audioUrl?: string | null, opts?: { fitSec?: number }) => say(text, audioUrl, { ...opts, guide: true }), [say]);
+  const session = useExerciseSession(exercise, videoRef, sayGuide, guideOf, {
     // 음성 안내를 켠 사람(시각장애인)에게만 묻는다. 끈 사람(일반 사용자)은 원래 영상처럼 이어진다
     askBeforeNext: () => speechEnabledRef.current && askStepsRef.current,
   });
@@ -916,7 +927,8 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
   );
   const runIntentAsking = useCallback(
     (intent: Intent, text = "") => {
-      const question = navQuestion(intent);
+      // 글로 입력했으면 화면을 보고 있는 사람이므로 버튼처럼 묻지 않고 바로 한다
+      const question = quietRepliesRef.current ? null : navQuestion(intent);
       if (question) void ask(question, () => runIntent(intent, text), () => say("알겠어요. 여기 있을게요."));
       else runIntent(intent, text);
     },
@@ -991,6 +1003,11 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       if (nav.length > 0) {
         // 여러 개면 하나만 묻고 그것만 한다 (운동 하나를 여는 것이 가장 구체적이라 먼저)
         const first = nav.find((a) => a.type === "OPEN_EXERCISE") ?? nav[0]!;
+        // 글로 입력했으면 묻지 않고 바로 한다
+        if (quietRepliesRef.current) {
+          runAgentAction(first);
+          return;
+        }
         const question =
           first.type === "OPEN_EXERCISE"
             ? `${eulReul(exercises?.find((e) => e.id === first.exerciseId)?.title ?? "그 운동")} ${first.autoplay ? "열고 바로 시작할까요?" : "열까요?"}`
@@ -1179,6 +1196,8 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
 
   const heard = useCallback(
     (text: string) => {
+      // 말로 했으면 대답도 소리 내어 읽는다
+      quietRepliesRef.current = false;
       // 앱이 방금 읽은 말이 스피커에서 다시 들어온 것이면 사람이 한 말이 아니다
       if (spokenEcho.isEcho(text)) return;
       // 운동 중(음성 안내 켬)에는 호출어 없이 바로 대화한다
@@ -1274,6 +1293,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
 
   /** 큰 버튼: "소리벗"이라고 부른 것과 같다. 듣는 중에 누르면 그만 듣는다 */
   const pressToTalk = useCallback(async () => {
+    quietRepliesRef.current = false;
     cancelFollowUp();
     if (armedRef.current) {
       disarm(true);
@@ -1297,6 +1317,8 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       return;
     }
     setQuery("");
+    quietRepliesRef.current = true;
+    stopSpeaking();
     handleCommand(text);
   };
 

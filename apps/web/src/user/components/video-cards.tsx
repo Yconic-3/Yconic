@@ -91,24 +91,3 @@ export function VideoRow({
     </button>
   );
 }
-
-/**
- * 운동 목록 한 줄 (시안 D 네온 그린 · 운동 고르기, 부위별 목록).
- * 아이콘 + 굵은 이름 + "부위 · 길이 · 안내 수준". 누르면 그 운동을 바로 시작한다.
- */
-export function ExerciseListRow({ exercise, level, onOpen }: { exercise: PublishedExercise; level: GuideLevel; onOpen: () => void }) {
-  const part = exercise.tags[0] ?? EXERCISE_CATEGORY_LABELS[exercise.category];
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="flex min-h-[72px] w-full flex-wrap items-center gap-x-4 gap-y-1 rounded-2xl border-[3px] border-control bg-panel px-5 py-3 text-left text-ink hover:border-accent hover:bg-hover"
-    >
-      <Icon d={ICONS.exercise} size={26} />
-      <span className="text-[22px] font-extrabold">{exercise.title}</span>
-      <span className="text-[17px] text-ink-3">
-        {part} · {formatDuration(exercise.video.durationSec)} · {guideLevelLabel(level)} 안내
-      </span>
-    </button>
-  );
-}

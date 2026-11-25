@@ -37,3 +37,4 @@ packages/database/.pgdata/
 apps/api/storage/
 .next-share/
 .next-vercel/
+.next-mock/

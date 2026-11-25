@@ -2,13 +2,13 @@
 
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef } from "react";
-import { ExerciseListRow } from "@/user/components/video-cards";
+import { VideoCard } from "@/user/components/video-cards";
 import { searchExercises } from "@/user/lib/search";
 import { usePage, useShell } from "@/user/lib/shell";
 
 /**
  * 부위별·찾은 운동 목록 (/search?q=…, 시안 D 네온 그린 · 04 부위별 운동 목록).
- * "하체 운동 찾아줘"처럼 말하거나 글로 쓴 말로 찾은 운동이 한 줄씩 나온다. 누르거나 이름을 말하면 시작한다.
+ * "하체 운동 찾아줘"처럼 말하거나 글로 쓴 말로 찾은 운동이 썸네일 카드로 나온다. 누르거나 이름을 말하면 시작한다.
  */
 export default function SearchPage() {
   return (
@@ -55,10 +55,11 @@ function SearchResults() {
       {results.length === 0 ? (
         <p className="m-0 text-[18px] text-ink-2">찾은 운동이 없어요. 다른 말로 찾거나, 화면 위 운동하기에서 전체 목록을 보세요.</p>
       ) : (
-        <ul className="m-0 flex list-none flex-col gap-3 p-0">
+        // 유튜브처럼 썸네일 격자. 카드 하나가 버튼 하나이고, 스크린리더는 제목·분류·길이·안내 수준을 한 번에 읽는다
+        <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-x-4 gap-y-7 p-0">
           {results.map((e) => (
             <li key={e.id}>
-              <ExerciseListRow exercise={e} level={levelOf(e)} onOpen={() => openExercise(e.id, false)} />
+              <VideoCard exercise={e} level={levelOf(e)} onOpen={() => openExercise(e.id, false)} />
             </li>
           ))}
         </ul>
