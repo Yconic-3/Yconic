@@ -6,7 +6,7 @@ const apiTarget = (process.env.API_INTERNAL_URL ?? "http://localhost:4000").repl
 const agentTarget = (process.env.AGENT_INTERNAL_URL ?? "http://localhost:4100").replace(/\/+$/, "");
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@yconic/shared-types"],
+  transpilePackages: ["@yconic/shared-types", "@yconic/fixtures", "@yconic/ai-common", "@yconic/user-agent"],
   // 개발 도구 아이콘이 사용자 화면의 마이크 버튼이나 관리자 화면의 버튼을 가리지 않게 끈다.
   devIndicators: false,
   // 공개 링크용 빌드는 따로 둔다 (pnpm share). 개발 서버(.next)와 섞이지 않게
@@ -19,10 +19,14 @@ const nextConfig: NextConfig = {
     proxyTimeout: 180_000,
   },
   async rewrites() {
-    return [
-      { source: "/api/:path*", destination: `${apiTarget}/:path*` },
-      { source: "/agent/:path*", destination: `${agentTarget}/:path*` },
-    ];
+    // Vercel처럼 에이전트를 웹앱 안에서 돌리면(AGENT_IN_WEB=1) /agent 는 웹앱의 서버 함수(src/app/agent)가 맡는다.
+    // 아니면 4100번 에이전트 서버로 넘긴다 (웹앱의 서버 함수보다 먼저: beforeFiles)
+    const agentInWeb = process.env.AGENT_IN_WEB === "1";
+    return {
+      beforeFiles: agentInWeb ? [] : [{ source: "/agent/:path*", destination: `${agentTarget}/:path*` }],
+      afterFiles: [{ source: "/api/:path*", destination: `${apiTarget}/:path*` }],
+      fallback: [],
+    };
   },
 };
 

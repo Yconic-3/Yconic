@@ -124,6 +124,12 @@ describe("parseIntent — 앱 전체 명령 (시안 D)", () => {
     expect(parse("네.")).toEqual({ type: "START" });
   });
 
+  it("어렵다고 하면 쉽게 다시 설명해 달라는 뜻", () => {
+    expect(parse("너무 어려워요")).toEqual({ type: "EXPLAIN" });
+    expect(parse("무슨 말인지 모르겠어")).toEqual({ type: "EXPLAIN" });
+    expect(parse("좀 쉽게 설명해 줘")).toEqual({ type: "EXPLAIN" });
+  });
+
   it("모든 운동 영상 화면으로 간다", () => {
     expect(parse("모든 영상 보여줘")).toEqual({ type: "VIDEOS" });
     expect(parse("전체 운동 목록")).toEqual({ type: "VIDEOS" });

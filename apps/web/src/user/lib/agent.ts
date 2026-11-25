@@ -62,7 +62,8 @@ const OFF: AgentClient = { chat: async () => null };
 
 /** 환경에 맞는 에이전트 연결. 모의 모드(서버 없이 화면만 볼 때)에서는 쓰지 않는다 */
 export function createDefaultAgentClient(): AgentClient {
-  return getApiMode() === "http" ? createAgentClient(agentBaseUrl()) : OFF;
+  // 예시 데이터 모드라도 에이전트 주소를 정해 두면(Vercel: /agent) 그 에이전트를 쓴다
+  return getApiMode() === "http" || process.env.NEXT_PUBLIC_AGENT_URL ? createAgentClient(agentBaseUrl()) : OFF;
 }
 
 /** 계정·음성 설정·화면 종류처럼 앱 자체를 다루는 말. 길이와 상관없이 화면이 바로 처리한다 */

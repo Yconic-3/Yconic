@@ -11,9 +11,11 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@yconic/ai-common": "workspace:*",
     "@yconic/content-analysis": "workspace:*",
     "@yconic/fixtures": "workspace:*",
     "@yconic/shared-types": "workspace:*",
+    "@yconic/user-agent": "workspace:*",
     "next": "^16.4.5",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

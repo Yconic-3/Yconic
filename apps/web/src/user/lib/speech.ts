@@ -1,3 +1,5 @@
+import { createEchoFilter } from "./echo";
+
 /**
  * 브라우저 내장 음성 합성으로 안내를 읽는다.
  * 구간에 생성된 음성 파일(`tts.audioUrl`)이 있으면 그 파일을 재생하고, 없으면 브라우저 음성으로 읽는다.
@@ -47,6 +49,12 @@ export function getServerSpeechState(): SpeechState {
 }
 
 let currentAudio: HTMLAudioElement | null = null;
+/** 지금 읽고 있는 말과 그 끝을 알리는 약속 (같은 말을 다시 시작하지 않으려고) */
+let currentText = "";
+let currentPromise: Promise<boolean> | null = null;
+
+/** 앱이 소리 내어 읽은 말 (마이크로 다시 들어오면 메아리로 거른다) */
+export const spokenEcho = createEchoFilter();
 // 소리를 끈 상태에서 '읽는 시간'을 기다리는 타이머와 그 끝 처리
 let quietTimer: ReturnType<typeof setTimeout> | null = null;
 let quietDone: ((finished: boolean) => void) | null = null;
@@ -55,6 +63,8 @@ let utteranceSeq = 0;
 
 export function stopSpeaking() {
   utteranceSeq++;
+  currentText = "";
+  currentPromise = null;
   if (currentAudio) {
     currentAudio.pause();
     currentAudio = null;
@@ -111,7 +121,11 @@ export function readingTimeMs(text: string): number {
  * 음성을 껐거나 이 브라우저가 음성 합성을 못 하면, 글을 읽을 시간만큼 기다린 뒤 true로 끝난다.
  */
 export function speak(text: string, opts: { rate?: number; audioUrl?: string | null } = {}): Promise<boolean> {
+  // 같은 말을 읽고 있는 중이면 처음부터 다시 읽지 않는다 (같은 말이 되풀이되는 것처럼 들리지 않게)
+  if (state.speaking && !state.paused && currentText === text && currentPromise) return currentPromise;
   stopSpeaking();
+  currentText = text;
+  if (state.enabled && text.trim()) spokenEcho.spoke(text);
   const seq = utteranceSeq;
   const rate = opts.rate ?? 1;
   const finish = (resolve: (v: boolean) => void) => (ok: boolean) => {
@@ -146,17 +160,49 @@ export function speak(text: string, opts: { rate?: number; audioUrl?: string | n
     });
   }
 
-  return new Promise((resolve) => {
+  // 긴 글은 문장마다 나눠 읽는다. 브라우저 음성은 긴 글을 읽다가 멈추거나 끝을 알리지 않을 때가 있다.
+  // 오류가 나면 다시 읽지 않고 끝낸다. 끝을 알리지 않고 멈춰 있으면 읽을 시간이 지난 뒤 끝난 것으로 본다.
+  const sentences = splitSentences(text);
+  currentPromise = new Promise((resolve) => {
     const done = finish(resolve);
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = "ko-KR";
-    u.rate = rate;
+    let ended = false;
+    const end = (ok: boolean) => {
+      if (ended) return;
+      ended = true;
+      clearTimeout(watchdog);
+      done(ok);
+    };
+    const watchdog = setTimeout(() => {
+      if (seq !== utteranceSeq) return end(false);
+      window.speechSynthesis.cancel();
+      end(true);
+    }, (readingTimeMs(text) / Math.max(rate, 0.5)) * 2 + 5000);
     const voice = pickKoreanVoice();
-    if (voice) u.voice = voice;
-    u.onend = () => done(true);
-    u.onerror = () => done(false);
-    window.speechSynthesis.speak(u);
+    const sayAt = (i: number) => {
+      if (seq !== utteranceSeq) return end(false);
+      if (i >= sentences.length) return end(true);
+      const u = new SpeechSynthesisUtterance(sentences[i]!);
+      u.lang = "ko-KR";
+      u.rate = rate;
+      if (voice) u.voice = voice;
+      u.onend = () => sayAt(i + 1);
+      u.onerror = () => end(false);
+      window.speechSynthesis.speak(u);
+    };
+    sayAt(0);
   });
+  return currentPromise;
+}
+
+/** 문장 끝(. ? ! 。)에서 나눈다. 너무 짧은 조각은 앞 문장에 붙인다 */
+export function splitSentences(text: string): string[] {
+  const parts = text.match(/[^.?!。]+[.?!。]*\s*/g)?.map((p) => p.trim()).filter(Boolean) ?? [];
+  const out: string[] = [];
+  for (const p of parts) {
+    if (out.length > 0 && p.length < 6) out[out.length - 1] += ` ${p}`;
+    else out.push(p);
+  }
+  return out.length ? out : [text];
 }
 
 export const MIN_RATE = 0.6;

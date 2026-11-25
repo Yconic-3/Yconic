@@ -28,6 +28,8 @@ export type Intent =
   | { type: "MIC" }
   /** 설정 창 열기 */
   | { type: "SETTINGS" }
+  /** 지금 단계가 어렵다, 쉽게 다시 설명해 달라 (docs/decisions/0012) */
+  | { type: "EXPLAIN" }
   /** 부르면 듣기("소리벗") 켜기·끄기 */
   | { type: "WAKE_ON" }
   | { type: "WAKE_OFF" }
@@ -67,6 +69,7 @@ const NEW_CONTENT_WORDS = ["새 콘텐츠", "영상 올리", "콘텐츠 만들"]
 const SUPPLY_WORDS = ["콘텐츠 올리기", "내 콘텐츠", "올린 콘텐츠"];
 const CONSUME_WORDS = ["운동하기"];
 const SETTINGS_WORDS = ["설정"];
+const EXPLAIN_WORDS = ["어려워", "어렵", "모르겠", "이해가 안", "이해 안", "헷갈", "쉽게 설명", "다시 설명", "쉽게 말해", "무슨 말이"];
 /** "스쿼트 안내를 시작할까요?"에 "네"라고 답하면 시작으로 본다 */
 const YES_ANSWERS = new Set(["네", "예", "응", "네 시작", "예 시작", "좋아", "좋아요"]);
 const COURSES_WORDS = ["내 강의", "강의", "배웠", "수강"];
@@ -153,6 +156,7 @@ export function parseIntent(raw: string, exercises: IntentExercise[]): Intent {
   if (hasAny(text, SUPPLY_WORDS)) return { type: "SUPPLY" };
   if (hasAny(text, CONSUME_WORDS)) return { type: "CONSUME" };
   if (hasAny(text, SETTINGS_WORDS) && !text.includes("강의")) return { type: "SETTINGS" };
+  if (hasAny(text, EXPLAIN_WORDS)) return { type: "EXPLAIN" };
   if (YES_ANSWERS.has(text.replace(/[.!?,\s]+$/g, ""))) return { type: "START" };
   // "스쿼트 배웠어", "팔굽혀펴기는 아직 몰라": 강의보다 먼저 동작 하나를 본다
   if (hasAny(text, LEARN_WORDS)) {
