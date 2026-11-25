@@ -82,6 +82,7 @@ const APP_COMMANDS = new Set<Intent["type"]>([
   "COURSES",
   "MOVEMENT",
   "VIDEOS",
+  "SETTINGS",
 ]);
 
 /** 어느 화면에서나 바로 처리할 짧은 조작 */
