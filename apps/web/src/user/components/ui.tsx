@@ -4,7 +4,7 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 /**
  * 사용자 화면(시안 D · 소리벗, 다크 고대비) 공통 부품.
  * 버튼 상태: 기본 → 마우스 올림 → 누르는 중 → 지금 화면/선택됨(aria-current, aria-pressed).
- * 노랑은 가장 중요한 조작과 '지금 여기'에만, 하늘색은 보조 조작에 쓴다. 상태는 색만으로 알리지 않는다.
+ * 네온 그린은 가장 중요한 조작과 '지금 여기'에만, 하늘색은 보조 조작에 쓴다. 상태는 색만으로 알리지 않는다.
  */
 
 /** 선 아이콘 경로 (24×24) */
@@ -36,6 +36,7 @@ export const ICONS = {
   search: "M11 11m-7 0a7 7 0 1 0 14 0a7 7 0 1 0-14 0M20 20l-4-4",
   shield: "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z",
   menu: "M4 6h16M4 12h16M4 18h16",
+  gear: "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z",
   close: "M6 6l12 12M18 6L6 18",
 } as const;
 
@@ -92,7 +93,7 @@ export function Brand() {
 export type ButtonTone = "primary" | "line" | "soft" | "info" | "inverse";
 
 const TONE: Record<ButtonTone, string> = {
-  primary: "border-0 bg-accent text-bg hover:bg-accent-hover active:bg-accent-active",
+  primary: "border-0 bg-accent-grad text-bg active:bg-accent-active",
   line: "border-[3px] border-ink bg-panel text-ink hover:border-accent hover:bg-hover active:border-ink active:bg-ink active:text-bg",
   soft: "border-2 border-control bg-bg text-ink hover:border-ink hover:bg-hover active:bg-control active:text-bg",
   info: "border-[3px] border-info bg-bg text-info hover:bg-info-tint active:bg-info active:text-bg",
@@ -151,16 +152,19 @@ export function ListButton({
   onClick: () => void;
   currentKind?: "page" | "step";
 }) {
-  const on = current || pressed;
+  // 켜진 항목(내 강의 등)은 네온 그린으로 채우고, 지금 단계·지금 화면은 네온 그린 테두리로 알린다 (시안 D 네온 그린)
+  const style = pressed
+    ? "border-[3px] border-accent bg-accent-grad text-bg"
+    : current
+      ? "border-[3px] border-accent bg-accent-tint text-ink hover:bg-accent-tint-2"
+      : "border-[3px] border-control bg-panel text-ink hover:border-accent hover:bg-hover";
   return (
     <button
       type="button"
       onClick={onClick}
       aria-current={current ? currentKind : undefined}
       aria-pressed={pressed}
-      className={`flex min-h-[72px] w-full flex-col justify-center gap-0.5 rounded-2xl px-[18px] py-3 text-left text-ink ${
-        on ? "border-[3px] border-accent bg-accent-tint hover:bg-accent-tint-2" : "border-[3px] border-ink bg-panel hover:border-accent hover:bg-hover"
-      }`}
+      className={`flex min-h-[72px] w-full flex-col justify-center gap-0.5 rounded-2xl px-[18px] py-3 text-left ${style}`}
     >
       <span className="flex items-center gap-3 text-[22px] font-bold">
         <Icon d={icon} size={26} />
@@ -169,7 +173,7 @@ export function ListButton({
           {mark}
         </span>
       </span>
-      {sub && <span className="pl-[38px] text-[18px] text-ink-2">{sub}</span>}
+      {sub && <span className={`pl-[38px] text-[18px] ${pressed ? "text-bg/80" : "text-ink-2"}`}>{sub}</span>}
     </button>
   );
 }

@@ -8,14 +8,14 @@ import { eulReul } from "@/user/lib/korean";
 import { usePage, usePageCommands, useShell } from "@/user/lib/shell";
 
 /**
- * 내 강의·동작 (/courses).
+ * 내 강의 (/courses, 시안 D 네온 그린 · 12 내 강의). 강의를 먼저, 그 아래에 동작 하나씩 배운 것을 둔다.
  * 강사에게 배운 강의를 고르거나, 배운 동작을 하나씩 알린다. 여러 번 따라 한 동작도 배운 동작이 된다.
  * 배운 동작은 어느 영상에서든 짧게(배운 용어로), 처음 하는 동작은 자세하게 안내한다 (docs/decisions/0007, 0008).
  */
 export default function CoursesPage() {
   const { account, learnedCourses, setLearnedCourses, learning, setMovementKnown, say } = useShell();
   const [error, setError] = useState<string | null>(null);
-  usePage({ mode: "consume", title: "내 강의·동작", chips: ["스쿼트 배웠어", "하체 강의 들었어", "배운 동작 뭐야", "운동하기"] });
+  usePage({ mode: "consume", title: "내 강의", chips: ["코어 강의 들었어", "스쿼트 배웠어", "배운 동작 뭐야", "운동하기"] });
 
   async function toggle(id: CourseId, label: string) {
     const current = learnedCourses ?? [];
@@ -57,7 +57,29 @@ export default function CoursesPage() {
 
   return (
     <>
-      <Section id="movements-title" title="내 동작">
+      <Section id="courses-title" title="강사에게 배운 강의">
+        <p className="m-0 text-[18px] text-ink-2">배운 동작은 짧게, 처음 하는 동작은 자세히 안내합니다. 강의를 고르면 그 강의의 동작을 한꺼번에 배운 동작으로 둡니다.</p>
+        {learnedCourses === null ? (
+          <p className="m-0 text-ink-2">불러오는 중이에요.</p>
+        ) : (
+          LEARNED_COURSES.map((c) => {
+            const on = learnedCourses.includes(c.id);
+            const names = c.movements.map((id) => MOVEMENTS.find((m) => m.id === id)?.label ?? id).join(", ");
+            return (
+              <ListButton
+                key={c.id}
+                icon={on ? ICONS.check : ICONS.plus}
+                title={c.label}
+                sub={`${on ? "수강함 · 누르면 해제" : "수강 안 함 · 누르면 등록"} · ${names}`}
+                pressed={on}
+                onClick={() => void toggle(c.id, c.label)}
+              />
+            );
+          })
+        )}
+      </Section>
+
+      <Section id="movements-title" title="배운 동작 (동작 하나씩)">
         <p className="m-0 text-[18px] text-ink-2">
           배운 동작은 어느 영상에서든 짧게, 처음 하는 동작은 자세히 안내합니다. 영상을 끝까지 {PRACTICE_THRESHOLD}번 따라 하면 배운 동작이 됩니다. 누르면 켜고 끕니다.
         </p>
@@ -82,28 +104,6 @@ export default function CoursesPage() {
               );
             })}
           </ul>
-        )}
-      </Section>
-
-      <Section id="courses-title" title="강사에게 배운 강의">
-        <p className="m-0 text-[18px] text-ink-2">강의를 고르면 그 강의에서 배우는 동작을 한꺼번에 배운 동작으로 둡니다.</p>
-        {learnedCourses === null ? (
-          <p className="m-0 text-ink-2">불러오는 중이에요.</p>
-        ) : (
-          LEARNED_COURSES.map((c) => {
-            const on = learnedCourses.includes(c.id);
-            const names = c.movements.map((id) => MOVEMENTS.find((m) => m.id === id)?.label ?? id).join(", ");
-            return (
-              <ListButton
-                key={c.id}
-                icon={on ? ICONS.check : ICONS.plus}
-                title={c.label}
-                sub={`${on ? "수강함" : "수강 안 함"} · ${names}`}
-                pressed={on}
-                onClick={() => void toggle(c.id, c.label)}
-              />
-            );
-          })
         )}
       </Section>
 

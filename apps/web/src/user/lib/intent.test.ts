@@ -117,6 +117,13 @@ describe("parseIntent — 앱 전체 명령 (시안 D)", () => {
     expect(parse("하체 운동 찾아줘")).toEqual({ type: "LIST", category: null, keyword: "하체" });
   });
 
+  it("설정을 열고, '네'라고 답하면 시작한다", () => {
+    expect(parse("설정")).toEqual({ type: "SETTINGS" });
+    expect(parse("설정 열어줘")).toEqual({ type: "SETTINGS" });
+    expect(parse("네")).toEqual({ type: "START" });
+    expect(parse("네.")).toEqual({ type: "START" });
+  });
+
   it("모든 운동 영상 화면으로 간다", () => {
     expect(parse("모든 영상 보여줘")).toEqual({ type: "VIDEOS" });
     expect(parse("전체 운동 목록")).toEqual({ type: "VIDEOS" });

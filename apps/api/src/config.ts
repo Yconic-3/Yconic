@@ -9,6 +9,11 @@ export interface ApiConfig {
   webOrigins: string[];
   /** 영상 재생 주소를 만들 때 쓰는 API 서버의 바깥 주소 */
   publicUrl: string;
+  /**
+   * 공개 링크(Cloudflare)로 들어와도 관리자 계정 로그인을 허용할지 (기본: 막음, docs/decisions/0010).
+   * 저장소가 공개라 예시 관리자 비밀번호도 공개되어 있으므로, 시연할 때만 잠깐 켠다.
+   */
+  publicLinkAdminLogin: boolean;
   /** 올린 영상 파일을 두는 폴더. 나중에 S3 호환 저장소로 바꾼다 */
   storageDir: string;
   maxVideoBytes: number;
@@ -28,6 +33,7 @@ export function loadConfig(overrides: Partial<ApiConfig> = {}): ApiConfig {
     webOrigins: (process.env.WEB_ORIGIN ?? "http://localhost:3000").split(",").map((s) => s.trim()),
     // 영상 재생 주소의 앞부분. 기본은 웹앱이 대신 연결하는 /api 라서, localhost로 열든 공개 링크로 열든 영상이 나온다 (0010)
     publicUrl: process.env.API_PUBLIC_URL ?? "/api",
+    publicLinkAdminLogin: process.env.PUBLIC_LINK_ADMIN_LOGIN === "allow",
     storageDir: process.env.STORAGE_DIR ?? join(apiRoot, "storage"),
     maxVideoBytes: 2 * 1024 * 1024 * 1024,
     sessionDays: 30,

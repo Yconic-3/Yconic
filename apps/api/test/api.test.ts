@@ -54,6 +54,14 @@ describe("로그인", () => {
     expect(admin.status).toBe(403);
     expect(((await admin.json()) as { message: string }).message).toMatch(/관리자 계정/);
     expect((await viaLink("member@example.com", "member1234")).status).toBe(200);
+
+    // 시연할 때 PUBLIC_LINK_ADMIN_LOGIN=allow 로 켜면 공개 링크에서도 관리자로 들어갈 수 있다
+    s.config.publicLinkAdminLogin = true;
+    try {
+      expect((await viaLink("super@example.com", "super1234")).status).toBe(200);
+    } finally {
+      s.config.publicLinkAdminLogin = false;
+    }
   });
 
   it("로그아웃하면 토큰을 더 쓸 수 없다", async () => {

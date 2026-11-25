@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 /*
- * 사용자 화면 색 토큰 (디자인 시안 D · 소리벗, 다크 고대비)
- * - 노랑(accent)은 가장 중요한 조작과 '지금 여기'에만 쓴다. 하늘색(info)은 보조 조작과 초점 표시.
+ * 사용자 화면 색 토큰 (디자인 시안 D · 소리벗 네온 그린, 다크 고대비)
+ * - 네온 그린(accent)은 가장 중요한 조작과 '지금 여기'에만 쓴다. 하늘색(info)은 보조 조작과 초점 표시.
  * - 상태는 색만으로 알리지 않는다. 지금 화면·지금 단계에는 글자를 함께 붙인다.
  * - 글자는 바탕과 4.5:1 이상, 누를 수 있는 요소의 테두리는 3:1 이상이다. 색을 바꿀 때는 대비를 다시 확인한다.
  * 관리자 화면은 Tailwind 기본 색(slate, blue 등)을 쓰므로 이 토큰과 겹치지 않는다.
@@ -15,11 +15,11 @@
   --color-ink-2: #d5d8de; /* 보조 글자 */
   --color-ink-3: #b8bcc6; /* 상태 문구, 라벨 */
   --color-control: #8a8f99; /* 약한 조작 요소 테두리 (바탕 대비 6:1) */
-  --color-accent: #ffd23f; /* 가장 중요한 조작, 지금 여기 */
-  --color-accent-hover: #ffe27a;
-  --color-accent-active: #e6b800;
-  --color-accent-tint: #2a2614; /* 지금 단계·선택됨 바탕 */
-  --color-accent-tint-2: #3a3418;
+  --color-accent: #dcf35f; /* 가장 중요한 조작, 지금 여기 (네온 그린) */
+  --color-accent-hover: #ebfa96;
+  --color-accent-active: #c6e03c;
+  --color-accent-tint: #1f2611; /* 지금 단계·선택됨 바탕 */
+  --color-accent-tint-2: #2b3417;
   --color-info: #4cc9f0; /* 보조 조작, 초점 표시 */
   --color-info-light: #9be3f7;
   --color-info-tint: #12303a;
@@ -145,4 +145,12 @@ button {
   outline: 3px solid #2563eb;
   outline-offset: 2px;
   border-radius: 4px;
+}
+
+/* 가장 중요한 버튼(눌러서 말하기, 시작, 로그인 등)의 네온 그린 그라데이션 */
+.bg-accent-grad {
+  background: linear-gradient(90deg, var(--color-accent-active) 0%, var(--color-accent) 45%, var(--color-accent-hover) 100%);
+}
+.bg-accent-grad:hover {
+  background: linear-gradient(90deg, var(--color-accent) 0%, var(--color-accent-hover) 100%);
 }

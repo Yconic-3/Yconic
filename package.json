@@ -19,7 +19,8 @@
     "db:migrate": "pnpm --filter @yconic/database db:migrate",
     "db:seed": "pnpm --filter @yconic/database db:seed",
     "db:setup": "pnpm --filter @yconic/database db:setup",
-    "share": "node scripts/share.mjs"
+    "share": "node scripts/share.mjs",
+    "share:admin": "node scripts/share.mjs --admin"
   },
   "devDependencies": {
     "turbo": "^2.11.10",
