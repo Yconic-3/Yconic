@@ -25,6 +25,18 @@ export interface ExerciseSession {
   goToSegment(index: number): void;
   /** 위험 신호 등으로 운동을 중단한다. */
   stop(): void;
+  /**
+   * 단계가 끝나 다음 단계로 갈지 묻는 중이면 그 다음 단계 번호 (docs/decisions/0012). 아니면 null.
+   * 이때 영상은 멈춰 있고, confirmNext()로 넘어간다.
+   */
+  awaitingNext: number | null;
+  /** 묻던 다음 단계로 넘어가 이어서 재생한다 */
+  confirmNext(): void;
+}
+
+export interface ExerciseSessionOptions {
+  /** 단계가 끝날 때마다 멈추고 다음 단계로 갈지 물을지 (읽을 때마다 부른다) */
+  askBeforeNext?: () => boolean;
 }
 
 /**
@@ -42,6 +54,7 @@ export function useExerciseSession(
   say: (text: string, audioUrl?: string | null, opts?: { fitSec?: number }) => Promise<boolean>,
   /** 단계마다 읽어 줄 안내 (내 강의에 따라 짧게 또는 자세하게). 없으면 voiceGuide */
   guideOf: (segment: ExerciseSegment) => string = (s) => s.voiceGuide,
+  options: ExerciseSessionOptions = {},
 ): ExerciseSession {
   const [started, setStarted] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -50,6 +63,11 @@ export function useExerciseSession(
   const [stopped, setStopped] = useState(false);
   const [positionSec, setPositionSec] = useState(0);
   const [segmentIndex, setSegmentIndex] = useState(0);
+  const [awaitingNext, setAwaitingNext] = useState<number | null>(null);
+  const awaitingRef = useRef<number | null>(null);
+  awaitingRef.current = awaitingNext;
+  const askRef = useRef(options.askBeforeNext);
+  askRef.current = options.askBeforeNext;
 
   // 타이머와 음성 콜백에서 최신 값을 읽기 위한 참조
   const exerciseRef = useRef(exercise);
@@ -123,6 +141,7 @@ export function useExerciseSession(
     setStopped(false);
     setPositionSec(0);
     setSegmentIndex(0);
+    setAwaitingNext(null);
   }, [exercise?.id]);
 
   // 재생 중에는 일정 간격으로 위치를 읽어 구간이 바뀌었는지 확인한다.
@@ -140,13 +159,21 @@ export function useExerciseSession(
 
       const end = sessionEndSec(ex.segments, ex.video.durationSec);
       if (next >= end || (usingVideo && video.ended)) {
+        // 마친 뒤 할 말(요약과 다음 운동 묻기)은 화면이 맡는다 (COMPLETED 상태를 보고)
         haltClock();
         setCompleted(true);
-        void sayRef.current("운동을 마쳤습니다. 수고하셨습니다. 다른 운동을 하려면 홈으로 가기를 누르거나 홈이라고 말해 주세요.");
         return;
       }
       const index = segmentIndexAt(ex.segments, next);
-      if (index >= 0 && index !== announcedRef.current) announce(index);
+      if (index < 0 || index === announcedRef.current) return;
+      // 앞 단계가 끝나 다음 단계로 넘어갈 때: 묻기로 했으면 멈추고 물어본다 (대답할 때까지 기다린다)
+      if (announcedRef.current >= 0 && index > announcedRef.current && askRef.current?.()) {
+        haltClock();
+        setPosition(segmentStartSec(ex.segments, index));
+        setAwaitingNext(index);
+        return;
+      }
+      announce(index);
     }, TICK_MS);
     return () => window.clearInterval(timer);
   }, [playing, announce, haltClock, setPosition, videoRef]);
@@ -184,9 +211,20 @@ export function useExerciseSession(
       });
       return;
     }
-    // 멈춘 곳에서 이어서: 지금 구간 안내를 다시 들려주고 재생한다.
+    // 다음 단계로 갈지 묻는 중이면 "시작·계속·네"는 넘어가자는 뜻이다
+    if (awaitingRef.current !== null) {
+      const target = awaitingRef.current;
+      setAwaitingNext(null);
+      announce(target);
+      runClock();
+      return;
+    }
+    // 멈춘 곳에서 이어서: 안내 전체를 되풀이하지 않고 짧게 알린 뒤 재생한다.
+    const index = Math.max(0, segmentIndexAt(ex.segments, positionRef.current));
+    announcedRef.current = index;
+    setSegmentIndex(index);
+    void sayRef.current(`${index + 1}단계, ${ex.segments[index]?.title ?? ""} 이어서 할게요.`);
     runClock();
-    announce(Math.max(0, segmentIndexAt(ex.segments, positionRef.current)));
   }, [announce, completed, readingPrecautions, runClock, setPosition, started, stopped]);
 
   const pause = useCallback(() => {
@@ -214,6 +252,7 @@ export function useExerciseSession(
       setStarted(true);
       setCompleted(false);
       setStopped(false);
+      setAwaitingNext(null);
       setPosition(sec);
       lastTickRef.current = Date.now();
       const video = videoRef.current;
@@ -231,6 +270,15 @@ export function useExerciseSession(
     setStopped(true);
   }, [haltClock]);
 
+  const confirmNext = useCallback(() => {
+    const target = awaitingRef.current;
+    if (target === null) return;
+    setAwaitingNext(null);
+    setPosition(segmentStartSec(exerciseRef.current?.segments ?? [], target));
+    announce(target);
+    runClock();
+  }, [announce, runClock, setPosition]);
+
   const current = segments[segmentIndex] ?? null;
   return {
     state: sessionStateFor({ started, playing, readingPrecautions, completed, stopped, kind: current?.kind ?? null }),
@@ -240,10 +288,13 @@ export function useExerciseSession(
     positionSec,
     start,
     pause,
-    next: () => goToSegment(segmentIndex + 1),
+    // 묻는 중에 "다음"을 누르거나 말하면 그 단계로 넘어가 이어서 재생한다
+    next: () => (awaitingRef.current !== null ? confirmNext() : goToSegment(segmentIndex + 1)),
     previous: () => goToSegment(segmentIndex - 1),
     repeat: () => goToSegment(segmentIndex),
     goToSegment,
     stop,
+    awaitingNext,
+    confirmNext,
   };
 }

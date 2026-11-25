@@ -1,4 +1,5 @@
 import {
+  findsHard,
   LEARNED_COURSES,
   isMovementId,
   movementLabel,
@@ -26,6 +27,8 @@ export interface LearningApi {
   setMovement(movementId: MovementId, input: SetMovementInput): Promise<LearningProfile>;
   /** 끝까지 따라 한 동작을 알린다 (세 번이면 아는 동작이 된다) */
   recordPractice(movementIds: MovementId[]): Promise<LearningProfile>;
+  /** 다시 들었거나 "어려워요"라고 한 동작을 알린다 (쌓이면 더 쉽게 안내한다) */
+  recordStruggle(movementIds: MovementId[]): Promise<LearningProfile>;
   getGuides(exercise: PublishedExercise): Promise<PersonalizedGuides>;
 }
 
@@ -52,6 +55,7 @@ function createHttpLearningApi(baseUrl: string): LearningApi {
     getProfile: () => call("GET", "/me/learning"),
     setMovement: (id, input) => call("PUT", `/me/learning/movements/${id}`, input),
     recordPractice: (movementIds) => call("POST", "/me/learning/practice", { movementIds }),
+    recordStruggle: (movementIds) => call("POST", "/me/learning/struggle", { movementIds }),
     getGuides: (exercise) => call("GET", `/me/guides/${exercise.id}`),
   };
 }
@@ -63,6 +67,7 @@ interface MockEntry {
   declared: boolean;
   practiceCount: number;
   terms: string;
+  struggleCount?: number;
 }
 
 function createMockLearningApi(): LearningApi {
@@ -99,9 +104,16 @@ function createMockLearningApi(): LearningApi {
       if (fromCourses.has(movementId)) sources.push("course");
       if (e?.declared) sources.push("said");
       if ((e?.practiceCount ?? 0) > 0) sources.push("practice");
-      return { movementId, declared: fromCourses.has(movementId) || !!e?.declared, sources, practiceCount: e?.practiceCount ?? 0, terms: e?.terms ?? "" };
+      return {
+        movementId,
+        declared: fromCourses.has(movementId) || !!e?.declared,
+        sources,
+        practiceCount: e?.practiceCount ?? 0,
+        terms: e?.terms ?? "",
+        struggleCount: e?.struggleCount ?? 0,
+      };
     });
-    return { movements: movements.filter((m) => m.declared || m.practiceCount > 0) };
+    return { movements: movements.filter((m) => m.declared || m.practiceCount > 0 || m.struggleCount > 0) };
   }
   return {
     async getProfile() {
@@ -123,6 +135,15 @@ function createMockLearningApi(): LearningApi {
       write(entries);
       return profile();
     },
+    async recordStruggle(movementIds) {
+      const entries = read();
+      for (const id of new Set(movementIds)) {
+        const prev = entries[id] ?? { declared: false, practiceCount: 0, terms: "" };
+        entries[id] = { ...prev, struggleCount: (prev.struggleCount ?? 0) + 1 };
+      }
+      write(entries);
+      return profile();
+    },
     async getGuides(exercise) {
       const p = profile();
       return { exerciseId: exercise.id, generatedBy: "rule", segments: exercise.segments.map((s) => ruleGuide(s, p)) };
@@ -134,7 +155,8 @@ function createMockLearningApi(): LearningApi {
 export function ruleGuide(s: PublishedExercise["segments"][number], profile: LearningProfile | null) {
   const level = segmentGuideLevel(s, profile);
   const names = (s.movements ?? []).map(movementLabel).join("·");
-  const reason = !names ? "" : level === "concise" ? `${names}: 배운 동작이라 짧게` : `${names}: 처음 하는 동작이라 자세히`;
+  const hard = (s.movements ?? []).some((m) => findsHard(profile, m));
+  const reason = !names ? "" : level === "concise" ? `${names}: 배운 동작이라 짧게` : hard ? `${names}: 다시 들으신 동작이라 더 쉽고 천천히` : `${names}: 처음 하는 동작이라 자세히`;
   return { segmentId: s.id, level, text: ruleGuideText(s, profile), reason };
 }
 

@@ -103,6 +103,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@yconic/ai-common':
+        specifier: workspace:*
+        version: link:../../packages/ai-common
       '@yconic/content-analysis':
         specifier: workspace:*
         version: link:../../packages/content-analysis
@@ -112,6 +115,9 @@ importers:
       '@yconic/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
+      '@yconic/user-agent':
+        specifier: workspace:*
+        version: link:../user-agent
       next:
         specifier: ^16.4.5
         version: 16.4.5(@opentelemetry/api@1.10.0)(@types/node@24.19.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)

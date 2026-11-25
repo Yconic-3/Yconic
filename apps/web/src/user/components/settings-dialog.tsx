@@ -37,6 +37,9 @@ export interface SettingsDialogProps {
   onRate(value: number): void;
   wakeEnabled: boolean;
   wakeWord: string;
+  /** 단계가 끝날 때마다 다음 단계로 갈지 묻기 */
+  askSteps: boolean;
+  onAskSteps(on: boolean): void;
   onWake(on: boolean): void;
   fontScale: number;
   onFont(value: number): void;
@@ -134,6 +137,14 @@ export function SettingsDialog(p: SettingsDialogProps) {
               </Option>
               <Option on={!p.wakeEnabled} onClick={() => p.onWake(false)}>
                 끄기
+              </Option>
+            </Choice>
+            <Choice label="운동 중 단계가 끝나면 넘어갈지 묻기">
+              <Option on={p.askSteps} onClick={() => p.onAskSteps(true)}>
+                묻기
+              </Option>
+              <Option on={!p.askSteps} onClick={() => p.onAskSteps(false)}>
+                바로 넘어가기
               </Option>
             </Choice>
           </Group>

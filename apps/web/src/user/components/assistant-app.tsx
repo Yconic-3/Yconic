@@ -10,8 +10,10 @@ import {
   guideLevelLabel,
   hasNarration,
   isNarrationAt,
+  findsHard,
   knowsMovement,
   movementLabel,
+  PRACTICE_THRESHOLD,
   type AgentAction,
   type AgentChatResponse,
   type AgentTurn,
@@ -36,7 +38,9 @@ import { micPermissionText, requestMicPermission, watchMicPermission, type MicPe
 import { startListening, type Listener, type ListenError } from "@/user/lib/recognition";
 import { playEarcon } from "@/user/lib/earcon";
 import { FONT_CHOICES, nearestChoice, RATE_CHOICES, SettingsDialog } from "./settings-dialog";
-import { ARM_MS, createCommandGate, WAKE_WORD } from "@/user/lib/wake-word";
+import { afterWakeWord, ARM_MS, createCommandGate, WAKE_WORD } from "@/user/lib/wake-word";
+import { classifyAnswer } from "@/user/lib/confirm";
+import { readHistory, recommendNext, recordCompletion, timesDone } from "@/user/lib/history";
 import { ShellContext, type PageCommandHandler, type PageInfo, type ShellApi, type ShellMode } from "@/user/lib/shell";
 import {
   clampRate,
@@ -47,6 +51,7 @@ import {
   resumeSpeaking,
   setSpeechEnabled,
   speak,
+  spokenEcho,
   stopSpeaking,
   subscribeSpeech,
 } from "@/user/lib/speech";
@@ -112,20 +117,23 @@ interface VoicePrefs {
   wake: boolean;
   /** 글자 크기 배율 (보통 1, 크게 1.15, 아주 크게 1.3) */
   font: number;
+  /** 단계가 끝날 때마다 다음 단계로 갈지 묻기 (docs/decisions/0012) */
+  askSteps: boolean;
 }
 
 function readPrefs(): VoicePrefs {
   try {
     const raw = window.localStorage.getItem(PREFS_KEY);
-    const v = raw ? (JSON.parse(raw) as { tts?: unknown; rate?: unknown; wake?: unknown; font?: unknown }) : {};
+    const v = raw ? (JSON.parse(raw) as { tts?: unknown; rate?: unknown; wake?: unknown; font?: unknown; askSteps?: unknown }) : {};
     return {
       tts: v.tts !== false,
       rate: typeof v.rate === "number" ? clampRate(v.rate) : 1,
       wake: v.wake !== false,
       font: typeof v.font === "number" && v.font >= 1 && v.font <= 1.5 ? v.font : 1,
+      askSteps: v.askSteps !== false,
     };
   } catch {
-    return { tts: true, rate: 1, wake: true, font: 1 };
+    return { tts: true, rate: 1, wake: true, font: 1, askSteps: true };
   }
 }
 
@@ -265,6 +273,8 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     rateRef.current = prefs.rate;
     setRate(prefs.rate);
     setFontScale(prefs.font);
+    askStepsRef.current = prefs.askSteps;
+    setAskSteps(prefs.askSteps);
   }, []);
 
   const addMessage = useCallback((who: Message["who"], text: string) => {
@@ -322,6 +332,21 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     [addMessage],
   );
 
+  // ── 묻고 기다리기 (docs/decisions/0012): 단계를 넘기거나 화면을 바꾸기 전에 묻고 대답을 기다린다 ──
+  const pendingConfirmRef = useRef<{ yes: () => void; no?: () => void } | null>(null);
+  const ask = useCallback(
+    (question: string, yes: () => void, no?: () => void) => {
+      pendingConfirmRef.current = { yes, no };
+      return say(question);
+    },
+    [say],
+  );
+  const [askSteps, setAskSteps] = useState(true);
+  const askStepsRef = useRef(askSteps);
+  askStepsRef.current = askSteps;
+  /** 운동 중 말 걸기: 사람이 말하는 동안(중간 결과가 들어오는 동안) 영상 소리를 끄기 위한 시각 */
+  const userTalkingUntilRef = useRef(0);
+
   const exerciseLevel = exercise ? levelOf(exercise) : "detailed";
   const profileRef = useRef(learning);
   profileRef.current = accountId ? learning : null;
@@ -352,9 +377,32 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     [accountId, exerciseId, guides, learning],
   );
   const guideOf = useCallback((s: ExerciseSegment) => guideFor(s).text, [guideFor]);
-  const session = useExerciseSession(exercise, videoRef, say, guideOf);
+  const session = useExerciseSession(exercise, videoRef, say, guideOf, {
+    // 음성 안내를 켠 사람(시각장애인)에게만 묻는다. 끈 사람(일반 사용자)은 원래 영상처럼 이어진다
+    askBeforeNext: () => speechEnabledRef.current && askStepsRef.current,
+  });
   const sessionRef = useRef(session);
   sessionRef.current = session;
+
+  /**
+   * 지금 단계를 다시 들었거나 "어려워요"라고 했다: 그 단계의 동작을 '어려워한 동작'으로 기록한다 (docs/decisions/0012).
+   * 한 번 운동하는 동안 같은 단계는 한 번만 센다. 쌓이면 다음부터 더 쉽게 안내한다.
+   */
+  const notedStruggleRef = useRef(new Set<string>());
+  const noteStruggle = useCallback(() => {
+    const ex = exercise;
+    const s = sessionRef.current;
+    if (!ex || !accountId || !s.started) return;
+    const seg = ex.segments[s.segmentIndex];
+    const key = `${ex.id}:${s.segmentIndex}`;
+    if (!seg?.movements?.length || notedStruggleRef.current.has(key)) return;
+    notedStruggleRef.current.add(key);
+    learningApi
+      .recordStruggle(seg.movements)
+      .then(setLearning)
+      .catch(() => undefined);
+  }, [accountId, exercise, learningApi]);
+  useEffect(() => notedStruggleRef.current.clear(), [exercise?.id]);
 
   // 영상 소리와 앱의 음성이 겹치지 않게 한다 (docs/decisions/0009).
   // 음성 안내를 켜면: 앱이 말하는 동안, 호출어를 듣는 동안, 영상 속 강사가 말하는 동안 영상 소리를 끈다.
@@ -368,33 +416,107 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       const video = videoRef.current;
       if (!video) return;
       const sp = getSpeechState();
-      const mute = sp.enabled && (sp.speaking || armedRef.current || isNarrationAt(segments, video.currentTime));
+      const mute =
+        sp.enabled &&
+        (sp.speaking || armedRef.current || thinkingRef.current || Date.now() < userTalkingUntilRef.current || isNarrationAt(segments, video.currentTime));
       if (video.muted !== mute) video.muted = mute;
     }, 100);
     return () => window.clearInterval(timer);
   }, [exercise]);
 
-  // 끝까지 따라 하면 이 영상의 동작을 연습한 것으로 기록한다. 세 번이면 그 동작은 짧게 안내한다.
+  // ── 운동을 마치면 (docs/decisions/0012) ──
+  // 동작 연습을 기록하고(세 번이면 그 동작은 짧게 안내), 내가 한 운동 기록에 남기고,
+  // 끊기지 않게 다음에 할 운동을 골라 "해 볼까요?"라고 묻는다.
   const reportedRef = useRef<string | null>(null);
   useEffect(() => {
     if (session.state !== "COMPLETED") {
       reportedRef.current = null;
       return;
     }
-    if (!exercise || !accountId || reportedRef.current === exercise.id) return;
+    if (!exercise || reportedRef.current === exercise.id) return;
     reportedRef.current = exercise.id;
     const ids = practicedMovements(exercise);
-    if (ids.length === 0) return;
-    const before = learning;
-    learningApi
-      .recordPractice(ids)
-      .then((after) => {
-        setLearning(after);
-        const newlyKnown = ids.filter((id) => !knowsMovement(before, id) && knowsMovement(after, id));
-        if (newlyKnown.length) void say(`${eulReul(newlyKnown.map(movementLabel).join(", "))} 여러 번 따라 하셨어요. 다음부터는 짧게 안내할게요.`);
-      })
-      .catch(() => undefined);
-  }, [accountId, exercise, learning, learningApi, say, session.state]);
+    const before = accountId ? learning : null;
+    // 이번에 세 번째로 따라 해서 새로 익힌 동작 (서버 기록을 기다리지 않고 미리 센다)
+    const newlyKnown = before
+      ? ids.filter((id) => {
+          const k = before.movements.find((m) => m.movementId === id);
+          return !knowsMovement(before, id) && (k?.practiceCount ?? 0) + 1 >= PRACTICE_THRESHOLD;
+        })
+      : [];
+    if (accountId && ids.length > 0) {
+      learningApi
+        .recordPractice(ids)
+        .then(setLearning)
+        .catch(() => undefined);
+    }
+    const history = recordCompletion(accountId, exercise.id);
+    const count = timesDone(history, exercise.id);
+    const parts = [`수고하셨어요! ${eulReul(exercise.title)} 끝까지 마쳤어요.`];
+    if (count > 1) parts.push(`이번이 ${count}번째예요.`);
+    if (newlyKnown.length) parts.push(`${eunNeun(newlyKnown.map(movementLabel).join(", "))} 세 번 따라 하셔서 다음부터 짧게 안내할게요.`);
+    const next = recommendNext(exercises ?? [], exercise.id, history);
+    const toList = () =>
+      ask(
+        "그럼 운동 고르기로 갈까요?",
+        () => goSearch(""),
+        () => say("알겠어요. 여기 있을게요. 다시 하려면 \"시작\", 다른 운동은 \"운동 고르기\"라고 말해 주세요."),
+      );
+    if (next) {
+      void ask(`${parts.join(" ")} 다음으로 ${eulReul(next.title)} 해 볼까요? "네" 또는 "아니"라고 말해 주세요.`, () => openExercise(next.id, true), toList);
+    } else {
+      parts.push("운동 고르기로 갈까요?");
+      void ask(parts.join(" "), () => goSearch(""), () => say("알겠어요. 다시 하려면 \"시작\"이라고 말해 주세요."));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.state, exercise?.id]);
+
+  // ── 운동 화면 단축키 (docs/decisions/0012): 스페이스·K 시작/멈춤, ←·→ 이전/다음 단계, R 다시 듣기 ──
+  // 입력칸이나 버튼에 초점이 있을 때는 그 요소의 원래 동작을 따른다
+  useEffect(() => {
+    if (!exercise) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.closest("input, textarea, select, button, a, [role=dialog], video") || t.isContentEditable)) return;
+      const s = sessionRef.current;
+      const key = e.key.toLowerCase();
+      if (key === " " || key === "k") {
+        e.preventDefault();
+        togglePlayRef.current();
+      } else if (key === "arrowright") {
+        e.preventDefault();
+        s.next();
+      } else if (key === "arrowleft") {
+        e.preventDefault();
+        s.previous();
+      } else if (key === "r") {
+        e.preventDefault();
+        noteStruggle();
+        s.repeat();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [exercise, noteStruggle]);
+
+  // ── 단계가 끝나면 묻고 기다린다 (docs/decisions/0012) ──
+  useEffect(() => {
+    const nextIndex = session.awaitingNext;
+    if (nextIndex === null || !exercise) return;
+    const nextSeg = exercise.segments[nextIndex];
+    if (!nextSeg) return;
+    if ("vibrate" in navigator) navigator.vibrate?.(150);
+    const yes = () => sessionRef.current.confirmNext();
+    const no = () => void say(`알겠어요. 쉬었다가 준비되면 "다음"이라고 말해 주세요. 지금 단계를 다시 들으려면 "다시"라고 하세요.`);
+    void ask(`${nextIndex}단계가 끝났어요. 다음은 ${nextIndex + 1}단계, ${nextSeg.title}. 넘어갈까요?`, yes, no);
+    // 대답이 없으면 한 번만 더 묻고, 그 뒤로는 기다린다
+    const again = window.setTimeout(() => {
+      if (sessionRef.current.awaitingNext === nextIndex && !getSpeechState().speaking) void ask(`다음 단계로 갈까요? 준비되면 "네"라고 말해 주세요.`, yes, no);
+    }, 15_000);
+    return () => window.clearTimeout(again);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.awaitingNext, exercise?.id]);
 
   // 운동을 고르면 영상 주소를 받아 오고, "○○ 시작"으로 들어왔으면 바로 시작한다.
   useEffect(() => {
@@ -739,11 +861,66 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           s.previous();
           return;
         case "REPEAT":
+          noteStruggle();
           s.repeat();
           return;
+        case "EXPLAIN": {
+          // AI가 꺼져 있을 때: 지금 단계의 자세한 안내를 조금 천천히 다시 읽는다
+          noteStruggle();
+          const seg = exercise.segments[s.segmentIndex];
+          if (!seg) return;
+          if (s.playing) s.pause();
+          const detail = seg.voiceGuide || seg.instruction || seg.title;
+          void say(`천천히 다시 말씀드릴게요. ${detail} 준비되면 "계속"이라고 말해 주세요.`);
+          return;
+        }
       }
     },
-    [askMicPermission, changeRate, exercise, exercises, goSearch, goTo, handleBack, handleHome, handleLogout, learned, mode, openExercise, say, setLearnedCourses, setMovementKnown, setTts, toggleTtsPause],
+    [askMicPermission, changeRate, exercise, exercises, goSearch, goTo, handleBack, handleHome, handleLogout, learned, mode, noteStruggle, openExercise, say, setLearnedCourses, setMovementKnown, setTts, toggleTtsPause],
+  );
+
+  /**
+   * 말로 화면을 바꾸라고 하면 먼저 묻는다 (docs/decisions/0012). 버튼을 누른 것은 묻지 않는다.
+   * 화면을 바꾸는 말이 아니면(재생 조작, 설정 등) 바로 한다.
+   */
+  const navQuestion = useCallback(
+    (intent: Intent): string | null => {
+      switch (intent.type) {
+        case "OPEN": {
+          if (exercise?.id === intent.exerciseId) return null;
+          const title = exercises?.find((e) => e.id === intent.exerciseId)?.title ?? "그 운동";
+          return intent.autoplay ? `${eulReul(title)} 열고 바로 시작할까요?` : `${title} 화면으로 갈까요?`;
+        }
+        case "LIST":
+          return `${intent.category ? EXERCISE_CATEGORY_LABELS[intent.category] : (intent.keyword ?? "찾은")} 운동 목록으로 갈까요?`;
+        case "VIDEOS":
+        case "CONSUME":
+          return pathname === VIDEOS_PATH ? null : "운동 고르기로 갈까요?";
+        case "SUPPLY":
+          return mode === "supply" ? null : "콘텐츠 올리기로 갈까요?";
+        case "NEW_CONTENT":
+          return "새 콘텐츠 만들기로 갈까요?";
+        case "ACCOUNT":
+          return readSignedInAccount() ? "내 계정으로 갈까요?" : "로그인 화면으로 갈까요?";
+        case "COURSES":
+          return intent.courseId ? null : "내 강의로 갈까요?";
+        case "HOME":
+          return pathname === "/" ? null : "처음 화면으로 갈까요?";
+        case "BACK":
+          return "이전 화면으로 갈까요?";
+        default:
+          return null;
+      }
+    },
+    [exercise, exercises, mode, pathname],
+  );
+  const runIntentAsking = useCallback(
+    (intent: Intent, text = "") => {
+      const question = navQuestion(intent);
+      if (question) void ask(question, () => runIntent(intent, text), () => say("알겠어요. 여기 있을게요."));
+      else runIntent(intent, text);
+    },
+    [ask, navQuestion, runIntent, say],
   );
 
   /** 에이전트가 돌려준 할 일 하나를 말 없이 실행한다. 말은 에이전트의 답이 대신한다 */
@@ -788,18 +965,22 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
               s.previous();
               return;
             case "REPEAT":
+              noteStruggle();
               s.repeat();
               return;
           }
       }
     },
-    [adjustRate, exercise, goSearch, handleBack, handleHome, openExercise],
+    [adjustRate, exercise, goSearch, handleBack, handleHome, noteStruggle, openExercise],
   );
 
   /** 에이전트의 답: 화면 이동·멈춤은 바로, 답을 읽고, 안내를 시작하는 조작은 답을 다 읽은 뒤에 한다 */
   const runAgentResponse = useCallback(
     async (response: AgentChatResponse, seq: number) => {
-      const { before, after } = splitAgentActions(response.actions);
+      // 화면을 바꾸는 할 일은 대답을 읽은 뒤 먼저 묻는다 (docs/decisions/0012)
+      const isNav = (a: AgentAction) => a.type === "SHOW_LIST" || a.type === "NAVIGATE" || (a.type === "OPEN_EXERCISE" && a.exerciseId !== exercise?.id);
+      const nav = response.actions.filter(isNav);
+      const { before, after } = splitAgentActions(response.actions.filter((a) => !isNav(a)));
       before.forEach(runAgentAction);
       const stopped = response.actions.some((a) => a.type === "PLAYBACK" && a.command === "STOP");
       const reply = response.reply || (stopped ? SAFETY_MESSAGE : "");
@@ -807,8 +988,21 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       // 읽는 사이에 사용자가 다른 말을 했으면 미뤄 둔 조작은 하지 않는다
       if (seq !== commandSeqRef.current) return;
       after.forEach(runAgentAction);
+      if (nav.length > 0) {
+        // 여러 개면 하나만 묻고 그것만 한다 (운동 하나를 여는 것이 가장 구체적이라 먼저)
+        const first = nav.find((a) => a.type === "OPEN_EXERCISE") ?? nav[0]!;
+        const question =
+          first.type === "OPEN_EXERCISE"
+            ? `${eulReul(exercises?.find((e) => e.id === first.exerciseId)?.title ?? "그 운동")} ${first.autoplay ? "열고 바로 시작할까요?" : "열까요?"}`
+            : first.type === "SHOW_LIST"
+              ? `${first.keyword ?? (first.category ? EXERCISE_CATEGORY_LABELS[first.category] : "찾은")} 운동 목록으로 갈까요?`
+              : first.type === "NAVIGATE" && first.destination === "HOME"
+                ? "처음 화면으로 갈까요?"
+                : "이전 화면으로 갈까요?";
+        void ask(question, () => runAgentAction(first), () => say("알겠어요. 여기 있을게요."));
+      }
     },
-    [runAgentAction, say],
+    [ask, exercise, exercises, runAgentAction, say],
   );
 
   const handleCommand = useCallback(
@@ -827,9 +1021,27 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
 
       // 위험 신호는 어느 화면에서든 가장 먼저 처리한다
       if (intent.type === "SAFETY") {
+        pendingConfirmRef.current = null;
         setThinking(false);
         runIntent(intent);
         return;
+      }
+      // 물어본 것에 대한 대답이면 그대로 한다 ("네", "아니")
+      const pending = pendingConfirmRef.current;
+      pendingConfirmRef.current = null;
+      if (pending) {
+        const answer = classifyAnswer(text);
+        if (answer === "yes") {
+          setThinking(false);
+          pending.yes();
+          return;
+        }
+        if (answer === "no") {
+          setThinking(false);
+          if (pending.no) pending.no();
+          else void say("알겠어요.");
+          return;
+        }
       }
       // 페이지에서만 쓰는 말 (예: 분석 시작, 검수 요청)
       if (pageCommandsRef.current?.(text)) {
@@ -839,12 +1051,22 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       // 콘텐츠 올리기 화면에서는 운동 에이전트를 쓰지 않는다
       if (mode === "supply" || handleLocally(intent, text, exercise !== null)) {
         setThinking(false);
-        runIntent(intent, text);
+        runIntentAsking(intent, text);
         return;
       }
 
       setThinking(true);
       const s = sessionRef.current;
+      if (intent.type === "EXPLAIN") noteStruggle();
+      // 이 사람에 대해 아는 것과 지금 단계 안내를 함께 보낸다 (배운 말로, 어려워하는 동작은 쉽게)
+      const profile = accountId ? learning : null;
+      const recentIds = [...new Set(readHistory(accountId).slice(-10).reverse().map((h) => h.exerciseId))].slice(0, 3);
+      const learner = {
+        known: (profile?.movements ?? []).filter((m) => knowsMovement(profile, m.movementId)).map((m) => movementLabel(m.movementId)),
+        hard: (profile?.movements ?? []).filter((m) => findsHard(profile, m.movementId)).map((m) => movementLabel(m.movementId)),
+        recent: recentIds.map((id) => (exercises ?? []).find((e) => e.id === id)?.title).filter((t): t is string => !!t),
+      };
+      const currentSeg = exercise?.segments[s.segmentIndex];
       void agent
         .chat({
           message: text,
@@ -854,6 +1076,8 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
             exerciseId: view.name === "exercise" ? view.exerciseId : null,
             sessionState: exercise ? s.state : null,
             segmentIndex: exercise ? s.segmentIndex : null,
+            learner,
+            ...(currentSeg ? { currentGuide: guideOf(currentSeg) || currentSeg.voiceGuide } : {}),
           },
         })
         .then((response) => {
@@ -861,10 +1085,10 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           setThinking(false);
           // 에이전트를 못 쓰면 규칙 기반 해석으로 처리한다
           if (response) void runAgentResponse(response, seq);
-          else runIntent(intent, text);
+          else runIntentAsking(intent, text);
         });
     },
-    [addMessage, agent, exercise, exercises, mode, pathname, routeExerciseId, runAgentResponse, runIntent, view],
+    [accountId, addMessage, agent, exercise, exercises, guideOf, learning, mode, noteStruggle, pathname, routeExerciseId, runAgentResponse, runIntentAsking, say, view],
   );
 
   const handleCommandRef = useRef(handleCommand);
@@ -874,6 +1098,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
   // 마이크를 켜 두고 "소리벗"이라고 부른 뒤의 말만 명령으로 받는다. 큰 버튼을 누르는 것은 부른 것과 같다.
   // 호출어 없이 들린 말(영상 속 강사의 말, 주변 소리)은 명령으로 받지 않는다.
   const gateRef = useRef(createCommandGate());
+  const openMicRef = useRef(false);
   const [armed, setArmed] = useState(false);
   const armTimerRef = useRef<number | null>(null);
   const [wakeEnabled, setWakeEnabledState] = useState(true);
@@ -954,6 +1179,24 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
 
   const heard = useCallback(
     (text: string) => {
+      // 앱이 방금 읽은 말이 스피커에서 다시 들어온 것이면 사람이 한 말이 아니다
+      if (spokenEcho.isEcho(text)) return;
+      // 운동 중(음성 안내 켬)에는 호출어 없이 바로 대화한다
+      if (openMicRef.current) {
+        const rest = afterWakeWord(text);
+        if (rest === "") {
+          arm();
+          return;
+        }
+        cancelFollowUp();
+        clearArmTimer();
+        gateRef.current.disarm();
+        armedRef.current = false;
+        setArmed(false);
+        setVoiceStatus(`들린 말: "${rest ?? text}"`);
+        handleCommandRef.current(rest ?? text);
+        return;
+      }
       const r = gateRef.current.feed(text);
       if (!r) return;
       if (r.kind === "armed") {
@@ -979,6 +1222,14 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     if (listenerRef.current) return true;
     const listener = startListening({
       onText: (text) => heardRef.current(text),
+      // 사람이 말하기 시작하면(앱의 메아리가 아니면) 앱이 읽던 말을 멈추고 듣는다. 듣는 동안 영상 소리도 끈다
+      onSpeaking: (partial) => {
+        if (spokenEcho.isEcho(partial) || partial.replace(/\s/g, "").length < 2) return;
+        const conversing = openMicRef.current || armedRef.current || afterWakeWord(partial) !== null;
+        if (!conversing) return;
+        userTalkingUntilRef.current = Date.now() + 1500;
+        if (getSpeechState().speaking) stopSpeaking();
+      },
       onError: (error) => {
         // 잠깐 끊긴 것(failed)은 알아서 다시 듣는다. 알릴 것은 지원 안 함·권한 거부뿐
         if (error === "failed") return;
@@ -993,6 +1244,14 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     setListening(true);
     return true;
   }, []);
+
+  // 운동 중에는 호출어 없이 듣는다 (음성 안내를 켰을 때, 시작한 뒤). 마이크가 허용돼 있어야 한다
+  const openMic = routeExerciseId !== null && speech.enabled && session.started;
+  openMicRef.current = openMic;
+  useEffect(() => {
+    if (openMic && mic === "granted") ensureListener();
+    else if (!openMic && !wakeEnabledRef.current && !armedRef.current) stopListener();
+  }, [ensureListener, mic, openMic, stopListener]);
 
   // 마이크가 허용돼 있고 부르면 듣기가 켜져 있으면 계속 듣는다
   useEffect(() => {
@@ -1041,6 +1300,8 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     handleCommand(text);
   };
 
+  const togglePlayRef = useRef<() => void>(() => {});
+  togglePlayRef.current = () => togglePlay();
   const togglePlay = () => {
     if (session.playing) {
       stopSpeaking();
@@ -1196,7 +1457,9 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
             ? "답을 생각하고 있어요…"
             : armed
               ? voiceStatus
-              : wakeEnabled && listening
+              : openMicRef.current && listening
+                ? "운동 중에는 바로 말하면 들어요. 말을 마칠 때까지 기다릴게요"
+                : wakeEnabled && listening
                 ? `위의 큰 버튼을 누르거나 “${WAKE_WORD}”라고 부르고 말하세요`
                 : "위의 큰 버튼을 누르고 말하세요"}
         </p>
@@ -1351,7 +1614,10 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       </button>
       <button
         type="button"
-        onClick={session.repeat}
+        onClick={() => {
+          noteStruggle();
+          session.repeat();
+        }}
         className="flex min-h-[64px] items-center justify-center gap-2 rounded-2xl border-l-2 border-line px-5 text-[20px] font-bold text-ink hover:bg-hover max-[640px]:col-span-2 max-[640px]:border-l-0"
       >
         <Icon d={ICONS.repeat} /> 다시 듣기
@@ -1443,6 +1709,11 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
                 {!isWatch && guideBox}
                 {isWatch && watchBody}
                 {isWatch && watchControls}
+                {isWatch && (
+                  <p className="m-0 text-[15px] text-ink-3">
+                    키보드: 스페이스 시작·멈춤 · ← → 이전·다음 단계 · R 다시 듣기. 운동 중에는 "소리벗" 없이 바로 말해도 들어요.
+                  </p>
+                )}
                 {exerciseMissing && <p className="m-0 text-ink-2">공개가 끝났거나 주소가 잘못되었어요. 화면 위 운동하기에서 다시 골라 주세요.</p>}
                 {!shellRoute && children}
               </div>
@@ -1495,6 +1766,14 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           }}
           fontScale={fontScale}
           onFont={changeFont}
+          askSteps={askSteps}
+          onAskSteps={(on) => {
+            if (on === askSteps) return;
+            askStepsRef.current = on;
+            setAskSteps(on);
+            writePrefs({ askSteps: on });
+            void say(on ? "단계가 끝날 때마다 넘어갈지 물어볼게요." : "단계가 끝나면 묻지 않고 바로 넘어갈게요.");
+          }}
           accountName={account?.name ?? null}
           coursesLabel={coursesLabel}
           isAdmin={!!account?.adminRole}

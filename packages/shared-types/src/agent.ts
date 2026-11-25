@@ -41,6 +41,20 @@ export interface AgentAppContext {
   sessionState: ExerciseSessionState | null;
   /** 지금 단계 (0부터) */
   segmentIndex: number | null;
+  /**
+   * 이 사람에 대해 아는 것 (docs/decisions/0012). 에이전트가 배운 말로, 어려워하는 동작은 더 쉽게 설명하는 데 쓴다.
+   * 로그인하지 않았거나 모르면 비운다.
+   */
+  learner?: {
+    /** 배운 동작 이름 (예: "스쿼트") */
+    known: string[];
+    /** 어려워하는 동작 이름 */
+    hard: string[];
+    /** 최근에 끝까지 한 운동 이름 (최근 것부터) */
+    recent: string[];
+  };
+  /** 운동 화면에서 지금 단계의 안내 글 (쉽게 다시 설명할 때 근거로 쓴다) */
+  currentGuide?: string;
 }
 
 export interface AgentChatRequest {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findMovementInText, knowsMovement, ruleGuideText, segmentGuideLevel, type LearningProfile } from "./index";
+import { findMovementInText, findsHard, knowsMovement, ruleGuideText, segmentGuideLevel, type LearningProfile } from "./index";
 
 const profile = (movements: LearningProfile["movements"]): LearningProfile => ({ movements });
 const knows = (id: LearningProfile["movements"][number]["movementId"], extra: Partial<LearningProfile["movements"][number]> = {}) => ({
@@ -8,6 +8,7 @@ const knows = (id: LearningProfile["movements"][number]["movementId"], extra: Pa
   sources: ["said" as const],
   practiceCount: 0,
   terms: "",
+  struggleCount: 0,
   ...extra,
 });
 
@@ -43,5 +44,14 @@ describe("동작 단위 맞춤 안내", () => {
     expect(segmentGuideLevel(restStep, p)).toBe("detailed");
     expect(segmentGuideLevel(squatStep, null)).toBe("detailed");
     expect(segmentGuideLevel({ movements: ["squat", "pushup"] }, p)).toBe("detailed");
+  });
+});
+
+describe("어려워하는 동작", () => {
+  it("두 번 넘게 다시 듣거나 어렵다고 했고 아직 익히지 않았으면 어려워하는 동작이다", () => {
+    expect(findsHard(profile([knows("squat", { declared: false, struggleCount: 2 })]), "squat")).toBe(true);
+    expect(findsHard(profile([knows("squat", { declared: false, struggleCount: 1 })]), "squat")).toBe(false);
+    // 배웠다고 알렸으면 어려워하는 동작으로 보지 않는다
+    expect(findsHard(profile([knows("squat", { struggleCount: 5 })]), "squat")).toBe(false);
   });
 });
