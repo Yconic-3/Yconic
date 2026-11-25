@@ -27,5 +27,10 @@ export function isShareMode(): boolean {
   return process.env.NEXT_PUBLIC_SHARE_MODE === "1";
 }
 
+/** 공개 링크에서도 관리자 화면을 쓰는 빌드인지 (pnpm share:admin). 체험 계정에 관리자도 보여 준다 */
+export function isShareAdminAllowed(): boolean {
+  return process.env.NEXT_PUBLIC_SHARE_ADMIN === "1";
+}
+
 /** 서버에 연결하지 못했을 때 보여 줄 말 */
 export const API_UNREACHABLE_MESSAGE = "서버에 연결할 수 없습니다. API 서버(pnpm dev:api)가 켜져 있는지 확인해 주세요.";

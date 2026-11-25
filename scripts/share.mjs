@@ -9,6 +9,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 const WEB_PORT = Number(process.env.SHARE_PORT ?? 3001);
+// --admin: 공개 링크에서도 관리자 화면을 쓴다 (API에도 PUBLIC_LINK_ADMIN_LOGIN=allow 가 있어야 한다)
+const allowAdmin = process.argv.includes("--admin");
 const isWin = process.platform === "win32";
 const root = new URL("..", import.meta.url);
 const webDir = new URL("apps/web/", root);
@@ -18,6 +20,7 @@ const shareEnv = {
   NEXT_PUBLIC_API_BASE_URL: "/api",
   NEXT_PUBLIC_AGENT_URL: "/agent",
   NEXT_PUBLIC_SHARE_MODE: "1",
+  NEXT_PUBLIC_SHARE_ADMIN: allowAdmin ? "1" : "",
   NEXT_DIST_DIR: ".next-share",
   NEXT_TELEMETRY_DISABLED: "1",
 };
@@ -42,6 +45,10 @@ console.log("\n  소리벗 임시 공개 링크를 엽니다.\n");
 if (!(await up("http://localhost:4000/health"))) {
   console.error("  API가 꺼져 있습니다. 먼저 다른 창에서 pnpm dev (또는 실행하기.cmd)로 켜 주세요.");
   process.exit(1);
+}
+if (allowAdmin) {
+  console.warn("  주의: 관리자 화면도 엽니다. 저장소가 공개라 예시 관리자 비밀번호를 누구나 알 수 있으니, 링크는 믿을 수 있는 사람에게만 보내 주세요.");
+  console.warn("        API의 apps/api/.env 에 PUBLIC_LINK_ADMIN_LOGIN=allow 가 있어야 관리자 로그인이 됩니다.");
 }
 if (!(await up("http://localhost:4100/health"))) {
   console.warn("  AI 에이전트가 꺼져 있습니다. 말 알아듣기는 규칙 기반으로 동작합니다.");
@@ -76,7 +83,11 @@ const watchForUrl = (chunk) => {
     console.log(`   공개 링크: ${m[0]}`);
     console.log("   이 주소를 보내면 누구나 열 수 있습니다 (https라 마이크도 됩니다).");
     console.log("   이 창을 닫거나 Ctrl+C 를 누르면 링크가 닫힙니다. 다시 켜면 주소가 바뀝니다.");
-    console.log("   관리자 계정은 공개 링크에서 로그인할 수 없습니다. AI는 하루 한도 안에서만 씁니다.");
+    console.log(
+      allowAdmin
+        ? "   관리자 화면도 열려 있습니다 (믿을 수 있는 사람에게만 보내 주세요). AI는 하루 한도 안에서만 씁니다."
+        : "   관리자 계정은 공개 링크에서 로그인할 수 없습니다. AI는 하루 한도 안에서만 씁니다.",
+    );
     console.log("  ================================================================\n");
   }
 };

@@ -41,7 +41,7 @@ export class AuthService {
     // 이메일이 없는 경우와 비밀번호가 틀린 경우를 구분해서 알려 준다 (시연 단계의 화면 문구와 맞춤).
     if (!row) throw new ApiError("UNAUTHORIZED", "등록되지 않은 이메일입니다.");
     if (!(await verifyPassword(password, row.passwordHash))) throw new ApiError("UNAUTHORIZED", "비밀번호가 맞지 않습니다.");
-    if (viaPublicLink && row.adminRole) {
+    if (viaPublicLink && row.adminRole && !this.config.publicLinkAdminLogin) {
       throw new ApiError("FORBIDDEN", "공개 링크에서는 관리자 계정으로 로그인할 수 없습니다. 일반 회원으로 로그인해 주세요.");
     }
 
