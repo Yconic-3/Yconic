@@ -14,8 +14,11 @@ export interface AgentClient {
 /** 에이전트를 못 쓸 때 다시 확인하기까지 기다리는 시간 */
 const RETRY_AFTER_MS = 30_000;
 const HEALTH_TIMEOUT_MS = 3_000;
-/** 에이전트는 Claude를 여러 번 부를 수 있어 넉넉히 기다린다 */
-const CHAT_TIMEOUT_MS = 25_000;
+/**
+ * 대답은 보통 3~6초면 온다. 이보다 오래 걸리면 기다리게 하지 않고 규칙 기반 해석으로 넘긴다
+ * (예전에는 25초까지 기다려서, AI가 느릴 때 화면이 '답을 생각하고 있어요'에 멈춘 것처럼 보였다).
+ */
+export const CHAT_TIMEOUT_MS = 12_000;
 
 export function createAgentClient(baseUrl: string, fetchFn: typeof fetch = (...args) => fetch(...args), now = () => Date.now()): AgentClient {
   // null: 아직 모름, true: 쓸 수 있음, 숫자: 이 시각까지 쓰지 않음

@@ -95,6 +95,10 @@ const LISTEN_ERROR_TEXT: Record<ListenError, string> = {
 
 /** 에이전트에게 함께 보내는 최근 대화 수 */
 const LOG_LIMIT = 8;
+/** 답을 이만큼 기다렸으면 조금 늦어진다고 알린다 */
+const THINKING_SLOW_MS = 4_000;
+/** 에이전트가 끝내 답하지 않아도 이 시간이 지나면 규칙 기반 해석으로 넘어간다 (에이전트 연결의 제한 시간보다 조금 길게) */
+const THINKING_MAX_MS = 16_000;
 
 /** 이 브라우저에만 기억하는 설정 (음성 안내 켬·끔, 말 속도) */
 const PREFS_KEY = "yconic.voice-prefs";
@@ -235,6 +239,16 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
   const [thinking, setThinking] = useState(false);
   const thinkingRef = useRef(thinking);
   thinkingRef.current = thinking;
+  // 답이 늦어지면 기다려 달라고 알린다
+  const [thinkingSlow, setThinkingSlow] = useState(false);
+  useEffect(() => {
+    if (!thinking) {
+      setThinkingSlow(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setThinkingSlow(true), THINKING_SLOW_MS);
+    return () => window.clearTimeout(timer);
+  }, [thinking]);
   /** children 페이지가 알려 준 제목·예시 말 */
   const [page, setPage] = useState<PageInfo | null>(null);
   /** 마이크 사용 권한 (브라우저가 알려 준 상태) */
@@ -343,13 +357,21 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
 
   // ── 묻고 기다리기 (docs/decisions/0012): 단계를 넘기거나 화면을 바꾸기 전에 묻고 대답을 기다린다 ──
   const pendingConfirmRef = useRef<{ yes: () => void; no?: () => void } | null>(null);
+  // 묻고 기다리는 동안에는 화면에 네·아니요 버튼도 보여 준다 (말로 대답하지 않아도 눌러서 넘어갈 수 있게)
+  const [confirming, setConfirming] = useState(false);
+  const setPendingConfirm = useCallback((pending: { yes: () => void; no?: () => void } | null) => {
+    pendingConfirmRef.current = pending;
+    setConfirming(pending !== null);
+  }, []);
   const ask = useCallback(
     (question: string, yes: () => void, no?: () => void) => {
-      pendingConfirmRef.current = { yes, no };
+      setPendingConfirm({ yes, no });
       return say(question);
     },
-    [say],
+    [say, setPendingConfirm],
   );
+  // 화면이 바뀌면 앞 화면에서 한 질문은 더 묻지 않는다
+  useEffect(() => setPendingConfirm(null), [pathname, setPendingConfirm]);
   const [askSteps, setAskSteps] = useState(true);
   const askStepsRef = useRef(askSteps);
   askStepsRef.current = askSteps;
@@ -670,7 +692,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
    * 마이크 사용을 허용해 달라고 한다. 브라우저 창이 뜨기 전에 말로 먼저 알린다.
    * 허용되면 true. 이미 차단돼 있으면 브라우저 설정에서 다시 허용하는 방법을 읽어 준다.
    */
-  const askMicPermission = useCallback(async (): Promise<boolean> => {
+  const askMicPermission = useCallback(async (opts?: { thenListen?: boolean }): Promise<boolean> => {
     if (micRef.current === "denied") {
       const help = micPermissionText("denied").help;
       setVoiceStatus(`마이크 권한: 차단됨`);
@@ -683,7 +705,14 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     setMic(result);
     if (result === "granted") {
       setVoiceStatus("마이크를 쓸 수 있어요.");
-      void say("마이크를 허용했습니다. 이제 큰 버튼을 누르고 말하세요.");
+      if (opts?.thenListen) {
+        // 큰 버튼을 눌러서 온 경우: 곧바로 듣기 시작하므로 다시 누르라고 하지 않는다.
+        // 안내를 다 읽은 뒤에 듣기 시작해야 앱의 말이 마이크로 들어가 명령으로 오해되지 않는다
+        const read = say("마이크를 허용했습니다. 알림음이 나면 말씀하세요.");
+        if (speechEnabledRef.current) await read;
+      } else {
+        void say("마이크를 허용했습니다. 이제 큰 버튼을 누르고 말하세요.");
+      }
       return true;
     }
     setVoiceStatus(`마이크 권한: ${micPermissionText(result).label}`);
@@ -1038,14 +1067,14 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
 
       // 위험 신호는 어느 화면에서든 가장 먼저 처리한다
       if (intent.type === "SAFETY") {
-        pendingConfirmRef.current = null;
+        setPendingConfirm(null);
         setThinking(false);
         runIntent(intent);
         return;
       }
       // 물어본 것에 대한 대답이면 그대로 한다 ("네", "아니")
       const pending = pendingConfirmRef.current;
-      pendingConfirmRef.current = null;
+      setPendingConfirm(null);
       if (pending) {
         const answer = classifyAnswer(text);
         if (answer === "yes") {
@@ -1084,6 +1113,19 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
         recent: recentIds.map((id) => (exercises ?? []).find((e) => e.id === id)?.title).filter((t): t is string => !!t),
       };
       const currentSeg = exercise?.segments[s.segmentIndex];
+      // 답이 오든, 실패하든, 끝내 오지 않든 한 번만 마무리한다. '답을 생각하고 있어요'에서 멈추지 않게 한다
+      let settled = false;
+      const finish = (response: AgentChatResponse | null) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(giveUp);
+        if (seq !== commandSeqRef.current) return;
+        setThinking(false);
+        // 에이전트를 못 쓰면 규칙 기반 해석으로 처리한다
+        if (response) void runAgentResponse(response, seq);
+        else runIntentAsking(intent, text);
+      };
+      const giveUp = window.setTimeout(() => finish(null), THINKING_MAX_MS);
       void agent
         .chat({
           message: text,
@@ -1097,15 +1139,9 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
             ...(currentSeg ? { currentGuide: guideOf(currentSeg) || currentSeg.voiceGuide } : {}),
           },
         })
-        .then((response) => {
-          if (seq !== commandSeqRef.current) return;
-          setThinking(false);
-          // 에이전트를 못 쓰면 규칙 기반 해석으로 처리한다
-          if (response) void runAgentResponse(response, seq);
-          else runIntentAsking(intent, text);
-        });
+        .then(finish, () => finish(null));
     },
-    [accountId, addMessage, agent, exercise, exercises, guideOf, learning, mode, noteStruggle, pathname, routeExerciseId, runAgentResponse, runIntentAsking, say, view],
+    [accountId, addMessage, agent, exercise, exercises, guideOf, learning, mode, noteStruggle, pathname, routeExerciseId, runAgentResponse, runIntentAsking, say, setPendingConfirm, view],
   );
 
   const handleCommandRef = useRef(handleCommand);
@@ -1301,7 +1337,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     }
     // 아직 허용하지 않았으면 먼저 묻는다. 차단됐으면 다시 허용하는 방법을 알려 준다
     if (micRef.current !== "granted") {
-      const ok = await askMicPermission();
+      const ok = await askMicPermission({ thenListen: true });
       if (!ok) return;
     }
     if (!ensureListener()) return;
@@ -1321,6 +1357,26 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     stopSpeaking();
     handleCommand(text);
   };
+
+  /** 묻는 말에 눌러서 대답하기: "네", "아니요"라고 말한 것과 같다 */
+  const answerConfirm = (answer: "네" | "아니요") => {
+    stopSpeaking();
+    handleCommand(answer);
+  };
+  const confirmButtons = confirming ? (
+    <div role="group" aria-label="대답하기" className="flex gap-3">
+      <button type="button" onClick={() => answerConfirm("네")} className="min-h-[60px] flex-1 rounded-2xl bg-accent-grad px-5 text-[22px] font-extrabold text-bg">
+        네
+      </button>
+      <button
+        type="button"
+        onClick={() => answerConfirm("아니요")}
+        className="min-h-[60px] flex-1 rounded-2xl border-2 border-control bg-panel px-5 text-[22px] font-bold text-ink hover:border-ink-2"
+      >
+        아니요
+      </button>
+    </div>
+  ) : null;
 
   const togglePlayRef = useRef<() => void>(() => {});
   togglePlayRef.current = () => togglePlay();
@@ -1440,6 +1496,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       >
         {lastSaid}
       </p>
+      {confirmButtons}
       <p className="m-0 text-[16px] text-ink-3">내가 한 말: {lastHeard ?? "아직 없음"}</p>
     </section>
   );
@@ -1476,7 +1533,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
         </button>
         <p role="status" className={`m-0 text-[16px] text-ink-3 max-[960px]:text-center ${isHome ? "text-center" : ""}`}>
           {thinking
-            ? "답을 생각하고 있어요…"
+            ? `${lastHeard ? `“${lastHeard}” · ` : ""}${thinkingSlow ? "답이 조금 늦어지고 있어요. 잠시만 기다려 주세요…" : "답을 생각하고 있어요…"}`
             : armed
               ? voiceStatus
               : openMicRef.current && listening
@@ -1713,6 +1770,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
                 </h1>
               </div>
               <p className="m-0 whitespace-pre-line rounded-2xl border-2 border-control bg-panel px-5 py-4 text-[20px] leading-[1.55]">{lastSaid}</p>
+              {confirmButtons}
               {speakPanel}
               <p className="m-0 text-center text-[17px] text-ink-3">
                 운동 목록은 화면 위 <b className="text-ink">운동하기</b> 버튼에 있습니다. “운동 목록”이라고 말해도 열립니다.
