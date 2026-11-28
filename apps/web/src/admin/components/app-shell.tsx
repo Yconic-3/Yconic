@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, type ReactNode } from "react";
 import { useSession } from "@/admin/lib/session";
-import { Button } from "./ui";
+import { Button, LinkButton } from "./ui";
 
 interface NavItem {
   href: string;
@@ -13,11 +13,13 @@ interface NavItem {
   permission: AdminPermission;
 }
 
+/**
+ * 메뉴는 둘뿐이다 (docs/decisions/0023). 대시보드와 AI 제작 작업 목록은 콘텐츠 목록 안으로 들어갔다:
+ * 분석 중인 영상은 콘텐츠 목록 맨 위에 나오고, 작업 내역은 그 옆의 링크로 연다.
+ */
 const NAV: NavItem[] = [
-  { href: "/admin", label: "대시보드", permission: "content:read" },
-  { href: "/admin/contents", label: "운동 영상", permission: "content:read" },
-  { href: "/admin/jobs", label: "AI 제작 작업", permission: "job:read" },
-  { href: "/admin/audit", label: "감사 로그", permission: "audit:read" },
+  { href: "/admin/contents", label: "콘텐츠", permission: "content:read" },
+  { href: "/admin/audit", label: "기록", permission: "audit:read" },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -51,83 +53,87 @@ export function AppShell({ children }: { children: ReactNode }) {
   if (isLogin) return <>{children}</>;
   if (!user) return null;
 
+  const canUpload = hasPermission(user.role, "job:create");
+  const uploading = pathname.startsWith("/admin/jobs/new");
+
   return (
-    <div className="flex min-h-full">
+    <div className="min-h-full">
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:bg-white focus:px-3 focus:py-2">
         본문으로 건너뛰기
       </a>
-      <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r-2 border-slate-200 bg-white">
-        <div className="border-b-2 border-slate-200 px-4 py-4">
+      <header className="sticky top-0 z-30 border-b-2 border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-5 gap-y-2 px-4 py-2.5 sm:px-6">
           {/* 사용자 화면과 같은 상표 (소리벗 로고 + 이름). 관리자 화면임을 글자로 붙인다 */}
-          <Link href="/admin" className="flex items-center gap-2.5" aria-label="소리벗 관리자 대시보드">
-            <svg aria-hidden="true" width="32" height="32" viewBox="0 0 40 40" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="flex-none text-blue-600">
+          <Link href="/admin/contents" className="flex items-center gap-2" aria-label="소리벗 관리자 콘텐츠 목록">
+            <svg aria-hidden="true" width="28" height="28" viewBox="0 0 40 40" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="flex-none text-blue-600">
               <path d="M8 20h4l3-9 4 18 4-13 3 6h6" />
             </svg>
-            <span className="whitespace-nowrap text-[22px] font-extrabold tracking-[-0.5px]" aria-hidden>
+            <span className="whitespace-nowrap text-xl font-extrabold tracking-[-0.5px]" aria-hidden>
               소리벗
             </span>
             <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700" aria-hidden>
               관리자
             </span>
           </Link>
-          {mode === "mock" && (
-            <p className="mt-1 text-xs text-amber-700" title="백엔드 없이 브라우저 안의 모의 데이터로 동작합니다.">
-              모의 데이터 모드
-            </p>
-          )}
-        </div>
-        <nav aria-label="주 메뉴" className="flex-1 px-2 py-3">
-          <ul className="space-y-1">
-            {NAV.filter((n) => hasPermission(user.role, n.permission)).map((n) => {
-              const active = n.href === "/admin" ? pathname === "/admin" : pathname.startsWith(n.href);
-              return (
-                <li key={n.href}>
-                  <Link
-                    href={n.href}
-                    aria-current={active ? "page" : undefined}
-                    className={`block rounded-xl border-2 px-3 py-2.5 text-[15px] ${active ? "border-blue-600 bg-blue-50 font-extrabold text-blue-700" : "border-transparent font-bold text-slate-700 hover:bg-slate-100"}`}
-                  >
-                    {n.label}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-          <p className="mt-4 border-t-2 border-slate-200 px-3 pt-3">
+
+          <nav aria-label="주 메뉴">
+            <ul className="flex items-center gap-1">
+              {NAV.filter((n) => hasPermission(user.role, n.permission)).map((n) => {
+                const active = pathname.startsWith(n.href) || (n.href === "/admin/contents" && (pathname === "/admin" || pathname.startsWith("/admin/jobs")));
+                return (
+                  <li key={n.href}>
+                    <Link
+                      href={n.href}
+                      aria-current={active ? "page" : undefined}
+                      className={`block rounded-xl px-3 py-2 text-[15px] ${active ? "bg-blue-50 font-extrabold text-blue-700" : "font-bold text-slate-600 hover:bg-slate-100"}`}
+                    >
+                      {n.label}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+
+          <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1">
+            {mode === "mock" && (
+              <span className="text-xs text-amber-700" title="백엔드 없이 브라우저 안의 모의 데이터로 동작합니다.">
+                모의 데이터
+                <button
+                  type="button"
+                  className="ml-1 underline"
+                  onClick={() => {
+                    if (window.confirm("모의 데이터를 처음 상태로 되돌릴까요? 지금까지 만든 내용이 사라집니다.")) {
+                      resetData();
+                      router.refresh();
+                      window.location.reload();
+                    }
+                  }}
+                >
+                  초기화
+                </button>
+              </span>
+            )}
+            {canUpload && !uploading && (
+              <LinkButton href="/admin/jobs/new" variant="primary">
+                <span aria-hidden>＋</span> 영상 올리기
+              </LinkButton>
+            )}
+            <span className="text-right text-xs leading-tight text-slate-500" title={user.email}>
+              <span className="block text-sm font-bold text-slate-800">{user.name}</span>
+              {ADMIN_ROLE_LABELS[user.role]}
+            </span>
             <Link href="/" className="text-sm text-slate-600 hover:text-blue-700 hover:underline">
-              ← 사용자 화면으로
+              사용자 화면
             </Link>
-          </p>
-        </nav>
-        <div className="border-t-2 border-slate-200 px-4 py-3 text-sm">
-          <p className="font-bold">{user.name}</p>
-          <p className="text-xs text-slate-500">
-            {ADMIN_ROLE_LABELS[user.role]} · {user.email}
-          </p>
-          <div className="mt-2 flex flex-wrap gap-1">
-            <Button variant="ghost" className="px-2 py-1 text-xs" onClick={handleLogout}>
+            <Button variant="ghost" className="px-2 py-1 text-sm" onClick={handleLogout}>
               로그아웃
             </Button>
-            {mode === "mock" && (
-              <Button
-                variant="ghost"
-                className="px-2 py-1 text-xs"
-                onClick={() => {
-                  if (window.confirm("모의 데이터를 처음 상태로 되돌릴까요? 지금까지 만든 내용이 사라집니다.")) {
-                    resetData();
-                    router.refresh();
-                    window.location.reload();
-                  }
-                }}
-              >
-                데이터 초기화
-              </Button>
-            )}
           </div>
         </div>
-      </aside>
-      <main id="main" className="min-w-0 flex-1 px-6 py-6">
-        <div className="mx-auto max-w-5xl">{children}</div>
+      </header>
+      <main id="main" className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+        {children}
       </main>
     </div>
   );

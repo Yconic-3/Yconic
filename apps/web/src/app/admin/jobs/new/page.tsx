@@ -46,7 +46,7 @@ export default function NewJobPage() {
   }, [file]);
 
   if (!hasPermission(user.role, "job:create")) {
-    return <Alert kind="error">제작 작업을 만들 권한이 없습니다.</Alert>;
+    return <Alert kind="error">영상을 올릴 권한이 없습니다.</Alert>;
   }
 
   async function onFile(f: File | null) {
@@ -84,7 +84,8 @@ export default function NewJobPage() {
       const video = await api.uploadVideo(file, setProgress);
       uploadedId = video.id;
       await api.createJob({ videoId: video.id, title, category, difficulty, requestNote });
-      router.push("/admin/jobs");
+      // 콘텐츠 목록 맨 위에 "분석 중"으로 나온다
+      router.push("/admin/contents");
     } catch (err) {
       setError(errorMessage(err));
       // 영상만 올라가고 작업 생성이 실패하면, 어디에도 연결되지 않은 영상이 남지 않게 지운다.
@@ -96,7 +97,7 @@ export default function NewJobPage() {
 
   return (
     <>
-      <PageHeader title="새 AI 제작 요청" description="운동 영상을 올리면 AI가 영상을 분석해 동작 구간을 나누고 구간별 음성 안내 초안을 만듭니다." actions={<LinkButton href="/admin/jobs">취소</LinkButton>} />
+      <PageHeader title="영상 올리기" description="운동 영상을 올리면 AI가 구간을 나누고 구간마다 음성 안내를 써 줍니다. 다 되면 콘텐츠 목록에 비공개로 나옵니다." actions={<LinkButton href="/admin/contents">취소</LinkButton>} />
       {mode === "mock" && (
         <div className="mb-4">
           <Alert kind="info">
@@ -106,7 +107,7 @@ export default function NewJobPage() {
       )}
       <form onSubmit={(e) => void submit(e)} noValidate>
         <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
-          <Card title="1. 운동 영상">
+          <Card title="1. 영상 고르기">
             <Field label="영상 파일" required error={fileError ?? undefined} hint="mp4, webm 등 브라우저가 재생할 수 있는 영상. 전신이 잘 보이는 밝은 영상일수록 분석이 정확합니다.">
               <Input type="file" accept="video/*" onChange={(e) => void onFile(e.target.files?.[0] ?? null)} disabled={busy} />
             </Field>
@@ -131,7 +132,7 @@ export default function NewJobPage() {
             )}
           </Card>
 
-          <Card title="2. 운동 정보">
+          <Card title="2. 이름 붙이기">
             <div className="space-y-4">
               <Field label="운동 이름" required>
                 <Input value={title} onChange={(e) => setTitle(e.target.value)} required placeholder="예: 앉아서 하는 목 스트레칭" disabled={busy} />
@@ -154,14 +155,19 @@ export default function NewJobPage() {
                   ))}
                 </Select>
               </Field>
-              <Field label="AI에게 전달할 요청 사항" hint="예: 손목이 약한 분도 할 수 있게 설명해 주세요. 휴식 구간을 넉넉히 잡아 주세요.">
-                <Textarea value={requestNote} onChange={(e) => setRequestNote(e.target.value)} disabled={busy} />
-              </Field>
+              <details className="rounded-xl border-2 border-slate-200">
+                <summary className="cursor-pointer select-none px-3 py-2 text-sm font-bold text-slate-600">AI에게 부탁할 것 (선택)</summary>
+                <div className="border-t-2 border-slate-200 p-3">
+                  <Field label="부탁할 것" hint="예: 손목이 약한 분도 할 수 있게 설명해 주세요. 쉬는 구간을 넉넉히 잡아 주세요.">
+                    <Textarea value={requestNote} onChange={(e) => setRequestNote(e.target.value)} disabled={busy} />
+                  </Field>
+                </div>
+              </details>
 
               {progress !== null && (
                 <div>
                   <div className="mb-1 flex justify-between text-xs text-slate-600">
-                    <span>{progress < 1 ? "영상 올리는 중…" : "제작 작업 등록 중…"}</span>
+                    <span>{progress < 1 ? "영상 올리는 중…" : "분석을 맡기는 중…"}</span>
                     <span>{Math.round(progress * 100)}%</span>
                   </div>
                   <div className="h-2 overflow-hidden rounded bg-slate-100" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100} aria-label="업로드 진행률">
@@ -173,9 +179,9 @@ export default function NewJobPage() {
 
               <div className="flex gap-2">
                 <Button type="submit" variant="primary" disabled={busy || !title.trim() || !file || !!fileError || !meta}>
-                  {busy ? "처리 중…" : "영상 올리고 제작 요청"}
+                  {busy ? "올리는 중…" : "올리기"}
                 </Button>
-                <LinkButton href="/admin/jobs">취소</LinkButton>
+                <LinkButton href="/admin/contents">취소</LinkButton>
               </div>
             </div>
           </Card>

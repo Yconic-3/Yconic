@@ -131,6 +131,52 @@ describe("검수 흐름", () => {
     // 수정 요청은 막지 않는다
     expect((await api.changeContentStatus("c3", { action: "REQUEST_CHANGES", comment: "다시 볼게요" })).status).toBe("CHANGES_REQUESTED");
   });
+  it("승인권자는 남이 만든 초안을 바로 공개할 수 있고, 편집자는 못 한다 (0023)", async () => {
+    const { api, as } = setup();
+    await expectError(api.changeContentStatus("c3", { action: "PUBLISH_NOW" }), "FORBIDDEN");
+    as(approver);
+    const published = await api.changeContentStatus("c3", { action: "PUBLISH_NOW" });
+    expect(published.status).toBe("PUBLISHED");
+    expect(published.publishedAt).not.toBeNull();
+    as(superAdmin);
+    expect((await api.listAuditLogs({ targetId: "c3" })).some((l) => l.summary.includes("승인과 공개를 한 번에"))).toBe(true);
+  });
+  it("자기가 만든 것은 바로 공개할 수 없다. 최고 관리자만 예외다 (0023)", async () => {
+    const { api, as, tick } = setup();
+    for (const who of [approver, superAdmin]) {
+      as(who);
+      const v = await api.uploadVideo(fakeVideo(`${who.id}.mp4`, 60));
+      const job = await api.createJob({ videoId: v.id, title: "내 운동", category: "CARDIO", difficulty: "BEGINNER", requestNote: "" });
+      tick(6000);
+      const contentId = (await api.listJobs()).find((j) => j.id === job.id)!.contentId!;
+      const draft = await api.getContent(contentId);
+      await api.updateContent(contentId, { ...editable(draft), summary: "요약", expectedVersion: draft.version });
+      if (who === approver) {
+        await expect(api.changeContentStatus(contentId, { action: "PUBLISH_NOW" })).rejects.toThrow("다른 승인권자");
+      } else {
+        expect((await api.changeContentStatus(contentId, { action: "PUBLISH_NOW" })).status).toBe("PUBLISHED");
+      }
+    }
+  });
+  it("고쳐야 할 것이 있으면 바로 공개할 수 없다", async () => {
+    const { api, as } = setup();
+    const c = await api.getContent("c3");
+    await api.updateContent("c3", { ...editable(c), segments: c.segments.map((s, i) => (i === 0 ? { ...s, voiceGuide: "" } : s)), expectedVersion: c.version });
+    as(approver);
+    await expectError(api.changeContentStatus("c3", { action: "PUBLISH_NOW" }), "VALIDATION");
+  });
+  it("공개 중인 것을 다시 고치려면 초안으로 돌린다", async () => {
+    const { api, as } = setup();
+    as(approver);
+    await api.changeContentStatus("c2", { action: "PUBLISH_NOW" });
+    as(editor);
+    await expectError(api.changeContentStatus("c2", { action: "REVISE" }), "FORBIDDEN");
+    as(approver);
+    const back = await api.changeContentStatus("c2", { action: "REVISE" });
+    expect(back.status).toBe("DRAFT");
+    expect(back.publishedAt).toBeNull();
+    expect((await api.updateContent("c2", { ...editable(back), summary: "고친 요약", expectedVersion: back.version })).summary).toBe("고친 요약");
+  });
   it("수정 요청에는 의견이 필요하고 콘텐츠에 남는다", async () => {
     const { api, as } = setup();
     as(approver);

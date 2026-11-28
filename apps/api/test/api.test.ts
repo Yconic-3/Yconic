@@ -189,6 +189,61 @@ describe("콘텐츠 수정과 검수", () => {
   it("편집자는 승인할 수 없다", async () => {
     expect((await (await editor()).post("/admin/contents/c2/actions", { action: "APPROVE" })).status).toBe(403);
   });
+
+  it("승인권자는 남이 만든 초안을 바로 공개할 수 있고, 편집자는 못 한다 (0023)", async () => {
+    expect((await (await editor()).post("/admin/contents/c3/actions", { action: "PUBLISH_NOW" })).status).toBe(403);
+    const ap = await approver();
+    const pub = await ap.post<ExerciseContent>("/admin/contents/c3/actions", { action: "PUBLISH_NOW" });
+    expect(pub.status).toBe(200);
+    expect(pub.body.status).toBe("PUBLISHED");
+    expect(pub.body.publishedAt).not.toBeNull();
+    expect((await anon().get("/exercises/c3")).status).toBe(200);
+    // 기록에 남는다
+    const logs = await (await superAdmin()).get<{ summary: string }[]>("/admin/audit-logs?targetId=c3");
+    expect(logs.body.some((l) => l.summary.includes("승인과 공개를 한 번에"))).toBe(true);
+  });
+
+  it("직접 검수를 요청한 사람은 바로 공개할 수 없다. 최고 관리자만 예외다 (0023)", async () => {
+    const ap = await approver();
+    await ap.post("/admin/contents/c3/actions", { action: "SUBMIT_FOR_REVIEW" });
+    const self = await ap.post("/admin/contents/c3/actions", { action: "PUBLISH_NOW" });
+    expect(self.status).toBe(403);
+    expect((await ap.post("/admin/contents/c3/actions", { action: "REQUEST_CHANGES", comment: "다시" })).status).toBe(200);
+
+    const su = await superAdmin();
+    const mine = await su.post<ExerciseContent>("/admin/contents/c3/actions", { action: "SUBMIT_FOR_REVIEW" });
+    expect(mine.body.submittedBy).toBe("u-super");
+    // 최고 관리자는 자기가 요청한 것도 승인할 수 있고, 바로 공개할 수도 있다
+    const pub = await su.post<ExerciseContent>("/admin/contents/c3/actions", { action: "PUBLISH_NOW" });
+    expect(pub.status).toBe(200);
+    expect(pub.body.status).toBe("PUBLISHED");
+  });
+
+  it("고쳐야 할 것이 있으면 바로 공개할 수 없다", async () => {
+    const ed = await editor();
+    const c = (await ed.get<ExerciseContent>("/admin/contents/c3")).body;
+    const broken = { ...c, segments: c.segments.map((x, i) => (i === 0 ? { ...x, voiceGuide: "" } : x)), expectedVersion: c.version };
+    expect((await ed.patch("/admin/contents/c3", broken)).status).toBe(200);
+    const res = await (await approver()).post("/admin/contents/c3/actions", { action: "PUBLISH_NOW" });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("VALIDATION");
+    expect((await anon().get("/exercises/c3")).status).toBe(404);
+  });
+
+  it("공개 중인 것을 다시 고치려면 초안으로 돌린다. 사용자 화면에서 사라지고 다시 고칠 수 있다", async () => {
+    const ap = await approver();
+    expect((await ap.post("/admin/contents/c2/actions", { action: "PUBLISH_NOW" })).status).toBe(200);
+    expect((await anon().get("/exercises/c2")).status).toBe(200);
+    expect((await (await editor()).post("/admin/contents/c2/actions", { action: "REVISE" })).status).toBe(403);
+
+    const back = await ap.post<ExerciseContent>("/admin/contents/c2/actions", { action: "REVISE" });
+    expect(back.status).toBe(200);
+    expect(back.body.status).toBe("DRAFT");
+    expect(back.body.publishedAt).toBeNull();
+    expect((await anon().get("/exercises/c2")).status).toBe(404);
+    const edited = await ap.patch<ExerciseContent>("/admin/contents/c2", { ...back.body, summary: "고친 요약", expectedVersion: back.body.version });
+    expect(edited.status).toBe(200);
+  });
 });
 
 describe("음성(TTS) 생성", () => {

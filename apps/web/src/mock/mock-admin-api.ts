@@ -6,6 +6,7 @@ import {
   canPerformAction,
   hasPermission,
   selfApprovalBlockedReason,
+  validateExerciseContent,
   type AdminUser,
   type AuditAction,
   type AuditLog,
@@ -464,13 +465,20 @@ export function createMockAdminApi(opts: MockAdminApiOptions): AdminApi {
             `${CONTENT_STATUS_LABELS[content.status]} 상태에서 "${t.label}"을(를) 할 수 없거나 권한이 없습니다.`,
           );
         }
-        if (input.action === "SUBMIT_FOR_REVIEW" && activeReanalysis(id)) {
-          throw new AdminApiError("CONFLICT", "다시 분석이 진행 중입니다. 끝난 뒤 검수를 요청해 주세요.");
+        if ((input.action === "SUBMIT_FOR_REVIEW" || input.action === "PUBLISH_NOW") && activeReanalysis(id)) {
+          throw new AdminApiError("CONFLICT", input.action === "PUBLISH_NOW" ? "다시 분석이 진행 중입니다. 끝난 뒤 공개해 주세요." : "다시 분석이 진행 중입니다. 끝난 뒤 검수를 요청해 주세요.");
         }
-        const selfApproval = selfApprovalBlockedReason(user.id, input.action, content);
+        // 최고 관리자만 자기가 만든 것도 승인·바로 공개할 수 있다 (docs/decisions/0023)
+        const selfApproval = selfApprovalBlockedReason(user.id, input.action, content, user.role);
         if (selfApproval) throw new AdminApiError("FORBIDDEN", selfApproval);
         if (input.action === "REQUEST_CHANGES" && !input.comment?.trim()) {
           throw new AdminApiError("VALIDATION", "수정 요청에는 검수 의견을 적어야 합니다.");
+        }
+        if (input.action === "PUBLISH_NOW") {
+          const errors = validateExerciseContent(content).filter((i) => i.severity === "ERROR");
+          if (errors.length > 0) {
+            throw new AdminApiError("VALIDATION", `고쳐야 할 것이 ${errors.length}개 있어 공개할 수 없습니다. ${errors[0]!.message}`);
+          }
         }
         const from = content.status;
         content.status = t.to;
@@ -479,10 +487,11 @@ export function createMockAdminApi(opts: MockAdminApiOptions): AdminApi {
         content.version += 1;
         if (input.action === "SUBMIT_FOR_REVIEW") content.submittedBy = user.id;
         if (input.action === "REQUEST_CHANGES") content.reviewComment = input.comment!.trim();
-        if (input.action === "PUBLISH") content.publishedAt = iso();
-        if (input.action === "UNPUBLISH") content.publishedAt = null;
+        if (input.action === "PUBLISH" || input.action === "PUBLISH_NOW") content.publishedAt = iso();
+        if (input.action === "UNPUBLISH" || input.action === "REVISE") content.publishedAt = null;
         const note = input.comment?.trim() ? ` (의견: ${input.comment.trim()})` : "";
-        audit(user, "CONTENT_STATUS_CHANGED", "CONTENT", id, `${CONTENT_STATUS_LABELS[from]} → ${CONTENT_STATUS_LABELS[t.to]}${note}`);
+        const how = input.action === "PUBLISH_NOW" ? " (승인과 공개를 한 번에)" : input.action === "REVISE" ? " (다시 고치기)" : "";
+        audit(user, "CONTENT_STATUS_CHANGED", "CONTENT", id, `${CONTENT_STATUS_LABELS[from]} → ${CONTENT_STATUS_LABELS[t.to]}${how}${note}`);
         persist();
         return clone(content);
       }),

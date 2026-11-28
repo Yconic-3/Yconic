@@ -133,6 +133,8 @@ export interface AnalysisInfo {
  *            ↓
  *   CHANGES_REQUESTED → (수정 후) IN_REVIEW
  * PUBLISHED → APPROVED (공개 중단), 어느 상태든 → ARCHIVED
+ * 관리자 화면의 "공개하기"는 DRAFT·CHANGES_REQUESTED·IN_REVIEW → PUBLISHED 를 한 번에 하고,
+ * "비공개로 돌려 고치기"는 APPROVED·PUBLISHED → DRAFT 로 돌린다 (workflow.ts, docs/decisions/0023)
  */
 export const CONTENT_STATUSES = [
   "DRAFT",
@@ -177,7 +179,7 @@ export interface ExerciseContent {
   /** 승인권자가 남긴 최근 검수 의견 */
   reviewComment: string | null;
   createdBy: Id;
-  /** 마지막으로 검수를 요청한 사람. 이 사람과 createdBy는 승인할 수 없다 (자기 승인 금지) */
+  /** 마지막으로 검수를 요청한 사람. 이 사람과 createdBy는 승인할 수 없다 (자기 승인 금지. 최고 관리자만 예외) */
   submittedBy: Id | null;
   updatedBy: Id;
   createdAt: ISODateString;

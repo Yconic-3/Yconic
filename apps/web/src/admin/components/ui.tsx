@@ -23,13 +23,12 @@ const variantClass: Record<Variant, string> = {
 const baseButton =
   "inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-bold transition disabled:cursor-not-allowed";
 
-export function Button({
-  variant = "secondary",
-  className = "",
-  ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
-  return <button type="button" className={`${baseButton} ${variantClass[variant]} ${className}`} {...props} />;
-}
+export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }>(function Button(
+  { variant = "secondary", className = "", ...props },
+  ref,
+) {
+  return <button ref={ref} type="button" className={`${baseButton} ${variantClass[variant]} ${className}`} {...props} />;
+});
 
 export function LinkButton({
   href,
