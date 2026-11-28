@@ -1,11 +1,12 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Put, Query, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import type { AdminUser, AuditLog, ContentJob, ExerciseContent, PlaybackUrlResponse, VideoAsset } from "@yconic/shared-types";
+import type { AdminUser, AuditLog, ContentJob, ExerciseContent, PlaybackUrlResponse, UploadProgress, UploadSession, VideoAsset } from "@yconic/shared-types";
 import { AdminGuard, AuthGuard, CurrentAdmin } from "../auth/guards";
 import { AdminService, type UploadedVideoFile } from "./admin.service";
 import {
   parseChangeStatus,
   parseCreateJob,
+  parseCreateUpload,
   parseListFilter,
   parseReanalyze,
   parseReplaceVideo,
@@ -33,6 +34,29 @@ export class AdminController {
     }
     // 검사에 실패해도 서비스가 저장된 파일을 지울 수 있도록 넘긴다.
     return this.admin.uploadVideo(user, file, meta);
+  }
+
+  // 영상 나눠 올리기 (shared-types/upload.ts)
+
+  @Post("uploads")
+  startUpload(@CurrentAdmin() user: AdminUser, @Body() body: unknown): Promise<UploadSession> {
+    return this.admin.startUpload(user, parseCreateUpload(body));
+  }
+
+  @Put("uploads/:id/chunks/:index")
+  uploadChunk(@CurrentAdmin() user: AdminUser, @Param("id") id: string, @Param("index") index: string, @Body() chunk: unknown): Promise<UploadProgress> {
+    return this.admin.uploadChunk(user, id, Number(index), chunk);
+  }
+
+  @Post("uploads/:id/complete")
+  finishUpload(@CurrentAdmin() user: AdminUser, @Param("id") id: string): Promise<VideoAsset> {
+    return this.admin.finishUpload(user, id);
+  }
+
+  @Delete("uploads/:id")
+  @HttpCode(204)
+  cancelUpload(@CurrentAdmin() user: AdminUser, @Param("id") id: string): Promise<void> {
+    return this.admin.cancelUpload(user, id);
   }
 
   @Get("videos/:id/playback-url")

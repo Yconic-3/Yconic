@@ -14,3 +14,4 @@ export * from "./creator-api";
 export * from "./courses";
 export * from "./movements";
 export * from "./narration";
+export * from "./upload";

@@ -7,6 +7,7 @@ import type { ContentAction } from "./workflow";
  * 모든 요청에 관리자 계정의 Authorization: Bearer <token> 이 필요하다 (없으면 401, 관리자가 아니면 403).
  * 백엔드 엔드포인트 제안:
  *   POST   /admin/videos                         multipart(file, durationSec, width, height) → VideoAsset (저장소에 저장)
+ *   POST   /admin/uploads …                      영상 나눠 올리기 (upload.ts). 화면은 이쪽을 쓴다
  *   GET    /admin/videos/:id/playback-url        → { url }                      (서명된 재생 주소)
  *   DELETE /admin/videos/:id                     → 204   (작업·콘텐츠에 연결되지 않은 영상만. 연결돼 있으면 409)
  *   GET    /admin/contents?status=&query=        → ExerciseContent[]

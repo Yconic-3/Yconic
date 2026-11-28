@@ -1,5 +1,6 @@
-import type { AdminApiErrorBody, PlaybackUrlResponse, VideoAsset } from "@yconic/shared-types";
+import type { AdminApiErrorBody, PlaybackUrlResponse } from "@yconic/shared-types";
 import { API_UNREACHABLE_MESSAGE } from "@/lib/api-mode";
+import { ChunkUploadError, uploadInChunks } from "@/lib/chunk-upload";
 import type { VideoMetadata } from "../video";
 import { AdminApiError, type AdminApi } from "./admin-api";
 
@@ -56,36 +57,13 @@ export function createHttpAdminApi(
         throw new AdminApiError("VALIDATION", e instanceof Error ? e.message : "영상 정보를 읽을 수 없습니다.");
       }
       if (!(meta.durationSec > 0)) throw new AdminApiError("VALIDATION", "영상 길이를 읽을 수 없습니다. 다른 파일로 시도해 주세요.");
-      return new Promise<VideoAsset>((resolve, reject) => {
-        // fetch는 업로드 진행률을 주지 않으므로 XMLHttpRequest를 쓴다.
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", `${baseUrl}/admin/videos`);
-        for (const [k, v] of Object.entries(authHeaders())) xhr.setRequestHeader(k, v);
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) onProgress?.(e.loaded / e.total);
-        };
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve(JSON.parse(xhr.responseText) as VideoAsset);
-          } else {
-            let body: AdminApiErrorBody | null = null;
-            try {
-              body = JSON.parse(xhr.responseText) as AdminApiErrorBody;
-            } catch {
-              // 본문이 JSON이 아니면 상태 코드만 사용
-            }
-            reject(new AdminApiError(body?.code ?? "UNKNOWN", body?.message ?? `업로드 실패 (${xhr.status})`));
-          }
-        };
-        xhr.onerror = () => reject(new AdminApiError("UNKNOWN", "업로드 중 네트워크 오류가 발생했습니다."));
-        const form = new FormData();
-        form.append("durationSec", String(meta.durationSec));
-        form.append("width", String(meta.width));
-        form.append("height", String(meta.height));
-        // 파일은 마지막에 넣는다 (서버가 앞의 칸을 먼저 읽는다)
-        form.append("file", file);
-        xhr.send(form);
-      });
+      // 작은 조각으로 나눠 올린다 (서버 앞 프록시가 큰 요청을 막아도 올라가게)
+      try {
+        return await uploadInChunks({ baseUrl: `${baseUrl}/admin`, headers: authHeaders, file, meta, onProgress });
+      } catch (e) {
+        if (e instanceof ChunkUploadError) throw new AdminApiError(e.code, e.message);
+        throw e;
+      }
     },
     getVideoPlaybackUrl: async (videoId) =>
       (await request<PlaybackUrlResponse>("GET", `/admin/videos/${encodeURIComponent(videoId)}/playback-url`)).url,

@@ -1,7 +1,7 @@
 import { contentJobs, videos } from "@yconic/database";
 import type { ContentJob, VideoAsset } from "@yconic/shared-types";
 import { rm } from "node:fs/promises";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 import { ApiError } from "../common/errors";
 import { newId } from "../common/ids";
 import { videosDir, type ApiConfig } from "../config";
@@ -18,6 +18,12 @@ export interface UploadedVideoFile {
   originalname: string;
   mimetype: string;
   size: number;
+}
+
+/** 확장자는 영문·숫자만 남긴다 (저장 파일 이름에 사용자가 보낸 글자가 섞이지 않게) */
+export function safeExt(name: string): string {
+  const ext = extname(name).toLowerCase();
+  return /^\.[a-z0-9]{1,8}$/.test(ext) ? ext : "";
 }
 
 export type VideoMeta = { durationSec: number; width: number; height: number };

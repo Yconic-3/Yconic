@@ -27,6 +27,8 @@ export async function createApp({ config, db, analyzer = createMockAnalyzer(), a
   app.disable("x-powered-by");
   app.enableCors({ origin: config.webOrigins });
   app.useBodyParser("json", { limit: "2mb" });
+  // 나눠 올리는 영상 조각 (upload.ops.ts). 조각 크기보다 조금 넉넉하게 받는다
+  app.useBodyParser("raw", { type: "application/octet-stream", limit: config.uploadChunkBytes + 1024 });
   app.useGlobalFilters(new ApiExceptionFilter());
   // 올린 영상 파일. 나중에 S3 호환 저장소의 서명된 주소로 바꾼다.
   app.useStaticAssets(config.storageDir, { prefix: "/media/", index: false, dotfiles: "deny" });

@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Put, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import type { AuthAccount, ContentJob, LearningProfile, MyContent, MyCourses, PersonalizedGuides, VideoAsset } from "@yconic/shared-types";
-import { parseCreateJob, parseMyCourses, parseRecordPractice, parseSetMovement, parseSubmitMy, parseUpdateMyGuides, parseVideoMeta } from "../admin/validate";
+import type { AuthAccount, ContentJob, LearningProfile, MyContent, MyCourses, PersonalizedGuides, UploadProgress, UploadSession, VideoAsset } from "@yconic/shared-types";
+import { parseCreateJob, parseCreateUpload, parseMyCourses, parseRecordPractice, parseSetMovement, parseSubmitMy, parseUpdateMyGuides, parseVideoMeta } from "../admin/validate";
 import { AuthGuard, CurrentAccount } from "../auth/guards";
 import type { UploadedVideoFile } from "../content/content.ops";
 import { LearningService } from "./learning.service";
@@ -67,6 +67,29 @@ export class MeController {
       meta = e as Error;
     }
     return this.me.uploadVideo(account, file, meta);
+  }
+
+  // 영상 나눠 올리기 (shared-types/upload.ts)
+
+  @Post("uploads")
+  startUpload(@CurrentAccount() account: AuthAccount, @Body() body: unknown): Promise<UploadSession> {
+    return this.me.startUpload(account, parseCreateUpload(body));
+  }
+
+  @Put("uploads/:id/chunks/:index")
+  uploadChunk(@CurrentAccount() account: AuthAccount, @Param("id") id: string, @Param("index") index: string, @Body() chunk: unknown): Promise<UploadProgress> {
+    return this.me.uploadChunk(account, id, Number(index), chunk);
+  }
+
+  @Post("uploads/:id/complete")
+  finishUpload(@CurrentAccount() account: AuthAccount, @Param("id") id: string): Promise<VideoAsset> {
+    return this.me.finishUpload(account, id);
+  }
+
+  @Delete("uploads/:id")
+  @HttpCode(204)
+  cancelUpload(@CurrentAccount() account: AuthAccount, @Param("id") id: string): Promise<void> {
+    return this.me.cancelUpload(account, id);
   }
 
   @Delete("videos/:id")

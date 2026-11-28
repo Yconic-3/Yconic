@@ -9,6 +9,7 @@ import {
   type ChangeContentStatusInput,
   type ContentListFilter,
   type CreateContentJobInput,
+  type CreateUploadInput,
   type ExerciseSegment,
   type MovementId,
   type MyCourses,
@@ -160,6 +161,17 @@ export function parseVideoMeta(body: Record<string, unknown>): { durationSec: nu
   const durationSec = n(body.durationSec, "영상 길이");
   if (!(durationSec > 0)) fail("영상 길이를 읽을 수 없습니다.");
   return { durationSec, width: Math.round(n(body.width ?? 0, "가로 크기")), height: Math.round(n(body.height ?? 0, "세로 크기")) };
+}
+
+/** 나눠 올리기를 시작할 때 보내는 영상 정보 */
+export function parseCreateUpload(body: unknown): CreateUploadInput {
+  const b = obj(body);
+  const fileName = str(b.fileName, "파일 이름", { max: 300 }).trim();
+  if (!fileName) fail("파일 이름을 보내 주세요.");
+  const sizeBytes = int(b.sizeBytes, "파일 크기");
+  if (sizeBytes <= 0) fail("빈 파일은 올릴 수 없습니다.");
+  const meta = parseVideoMeta(b);
+  return { fileName, mimeType: str(b.mimeType, "파일 종류", { max: 100 }), sizeBytes, ...meta };
 }
 
 // ── 회원 콘텐츠 올리기 (/me) ──

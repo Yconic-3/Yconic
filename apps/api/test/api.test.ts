@@ -402,3 +402,111 @@ describe("내 강의 (/me/courses)", () => {
     expect(squat.segments[1]!.conciseGuide).toMatch(/스쿼트/);
   });
 });
+
+describe("영상 나눠 올리기", () => {
+  const CHUNK = 400;
+  const bytes = (n: number) => Uint8Array.from({ length: n }, (_, i) => (i * 7) % 251);
+  const meta = (sizeBytes: number, extra: Record<string, unknown> = {}) => ({ fileName: "긴 영상.mp4", mimeType: "video/mp4", sizeBytes, durationSec: 95, width: 1280, height: 720, ...extra });
+
+  async function tokenOf(email: string, password: string): Promise<string> {
+    return (await anon().post<LoginResponse>("/auth/login", { email, password })).body.token;
+  }
+  function putChunk(token: string, prefix: string, id: string, index: number, chunk: Uint8Array, type = "application/octet-stream") {
+    return fetch(`${s.baseUrl}${prefix}/uploads/${id}/chunks/${index}`, { method: "PUT", headers: { Authorization: `Bearer ${token}`, "Content-Type": type }, body: chunk });
+  }
+
+  beforeEach(() => {
+    s.config.uploadChunkBytes = CHUNK;
+  });
+
+  it("회원이 조각으로 나눠 올리면 서버가 합쳐서 영상으로 기록한다", async () => {
+    const token = await tokenOf("member@example.com", "member1234");
+    const me = client(s.baseUrl, token);
+    const data = bytes(1000);
+    const start = await me.post("/me/uploads", meta(data.length));
+    expect(start.status).toBe(201);
+    expect(start.body).toMatchObject({ chunkBytes: CHUNK, chunkCount: 3 });
+    const id = start.body.id as string;
+
+    expect(await (await putChunk(token, "/me", id, 0, data.subarray(0, 400))).json()).toEqual({ receivedBytes: 400 });
+    // 응답을 못 받아 같은 조각을 다시 보내도 된다
+    expect(await (await putChunk(token, "/me", id, 0, data.subarray(0, 400))).json()).toEqual({ receivedBytes: 400 });
+    expect((await putChunk(token, "/me", id, 1, data.subarray(400, 800))).status).toBe(200);
+    // 다 올리기 전에는 끝낼 수 없다
+    expect((await me.post(`/me/uploads/${id}/complete`)).status).toBe(400);
+    expect(await (await putChunk(token, "/me", id, 2, data.subarray(800))).json()).toEqual({ receivedBytes: 1000 });
+
+    const done = await me.post<VideoAsset>(`/me/uploads/${id}/complete`);
+    expect(done.status).toBe(201);
+    expect(done.body).toMatchObject({ fileName: "긴 영상.mp4", sizeBytes: 1000, durationSec: 95, uploadedBy: "u-member" });
+    const saved = new Uint8Array(await (await fetch(done.body.url!)).arrayBuffer());
+    expect(Buffer.from(saved).equals(Buffer.from(data))).toBe(true);
+    // 끝난 올리기는 사라진다
+    expect((await me.post(`/me/uploads/${id}/complete`)).status).toBe(404);
+    // 올린 영상으로 제작을 요청할 수 있다
+    const job = await me.post("/me/content-jobs", { videoId: done.body.id, title: "나눠 올린 영상", category: "STRENGTH", difficulty: "BEGINNER", requestNote: "" });
+    expect(job.status).toBe(201);
+  });
+
+  it("순서가 틀리거나 크기가 틀린 조각은 받지 않는다", async () => {
+    const token = await tokenOf("member@example.com", "member1234");
+    const me = client(s.baseUrl, token);
+    const data = bytes(1000);
+    const id = (await me.post("/me/uploads", meta(data.length))).body.id as string;
+    // 0번을 건너뛰고 1번부터
+    expect((await putChunk(token, "/me", id, 1, data.subarray(400, 800))).status).toBe(409);
+    // 크기가 다르다
+    expect((await putChunk(token, "/me", id, 0, data.subarray(0, 399))).status).toBe(400);
+    // 없는 번호
+    expect((await putChunk(token, "/me", id, 3, data.subarray(0, 400))).status).toBe(400);
+    // 조각이 아닌 본문
+    expect((await putChunk(token, "/me", id, 0, data.subarray(0, 400), "text/plain")).status).toBe(400);
+    // 조각 크기보다 훨씬 큰 본문은 받지 않는다
+    expect((await putChunk(token, "/me", id, 0, new Uint8Array(2 * 1024 * 1024))).status).toBe(413);
+  });
+
+  it("영상이 아니거나 너무 크면 시작할 수 없고, 남의 올리기는 보이지 않는다", async () => {
+    const token = await tokenOf("member@example.com", "member1234");
+    const me = client(s.baseUrl, token);
+    expect((await me.post("/me/uploads", meta(10, { mimeType: "text/plain" }))).status).toBe(400);
+    expect((await me.post("/me/uploads", meta(3 * 1024 * 1024 * 1024))).status).toBe(400);
+    expect((await me.post("/me/uploads", meta(0))).status).toBe(400);
+    expect((await anon().post("/me/uploads", meta(10))).status).toBe(401);
+
+    const id = (await me.post("/me/uploads", meta(10))).body.id as string;
+    const other = await tokenOf("editor@example.com", "editor1234");
+    expect((await putChunk(other, "/me", id, 0, bytes(10))).status).toBe(404);
+    expect((await client(s.baseUrl, other).post(`/me/uploads/${id}/complete`)).status).toBe(404);
+    expect((await me.post("/me/uploads/..%2F..%2Fvideos/complete")).status).toBe(404);
+
+    // 그만두면 지워진다
+    expect((await me.del(`/me/uploads/${id}`)).status).toBe(204);
+    expect((await putChunk(token, "/me", id, 0, bytes(10))).status).toBe(404);
+  });
+
+  it("끝내지 않은 올리기는 한 사람에 3개까지", async () => {
+    const me = await login(s.baseUrl, "member@example.com", "member1234");
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i++) ids.push((await me.post("/me/uploads", meta(10))).body.id);
+    expect((await me.post("/me/uploads", meta(10))).status).toBe(409);
+    await me.del(`/me/uploads/${ids[0]}`);
+    expect((await me.post("/me/uploads", meta(10))).status).toBe(201);
+  });
+
+  it("관리자 화면도 나눠 올린다. 제작 권한이 없으면 403", async () => {
+    const viewer = await login(s.baseUrl, "viewer@example.com", "viewer1234");
+    expect((await viewer.post("/admin/uploads", meta(10))).status).toBe(403);
+    const member = await login(s.baseUrl, "member@example.com", "member1234");
+    expect((await member.post("/admin/uploads", meta(10))).status).toBe(403);
+
+    const token = await tokenOf("editor@example.com", "editor1234");
+    const ed = client(s.baseUrl, token);
+    const data = bytes(500);
+    const id = (await ed.post("/admin/uploads", meta(data.length))).body.id as string;
+    expect((await putChunk(token, "/admin", id, 0, data.subarray(0, 400))).status).toBe(200);
+    expect((await putChunk(token, "/admin", id, 1, data.subarray(400))).status).toBe(200);
+    const done = await ed.post<VideoAsset>(`/admin/uploads/${id}/complete`);
+    expect(done.status).toBe(201);
+    expect(done.body).toMatchObject({ sizeBytes: 500, uploadedBy: "u-editor" });
+  });
+});
