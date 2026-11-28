@@ -15,6 +15,9 @@ import {
   type ContentJob,
   type ContentListFilter,
   type ExerciseContent,
+  type CreateUploadInput,
+  type UploadProgress,
+  type UploadSession,
   type VideoAsset,
 } from "@yconic/shared-types";
 import { and, desc, eq, ilike, inArray, notInArray, or, sql, type SQL } from "drizzle-orm";
@@ -24,6 +27,7 @@ import { ApiError, notFound } from "../common/errors";
 import { newId } from "../common/ids";
 import { videosDir, type ApiConfig } from "../config";
 import { insertCreateJob, saveUploadedVideo, type UploadedVideoFile } from "../content/content.ops";
+import { appendChunk, cancelUpload, completeUpload, createUpload } from "../content/upload.ops";
 import { loadContents, loadJobs, videoUrl, writeAudit, type Db } from "../content/content.store";
 import { CONFIG, DB } from "../tokens";
 import type { SegmentInput, UpdateContentBody } from "./validate";
@@ -84,6 +88,24 @@ export class AdminService {
 
   async uploadVideo(user: AdminUser, file: UploadedVideoFile | undefined, meta: { durationSec: number; width: number; height: number } | Error): Promise<VideoAsset> {
     return saveUploadedVideo(this.db, this.config, user.id, file, meta, () => requirePermission(user, "job:create"));
+  }
+
+  // 나눠 올리기 (서버 앞 프록시가 큰 요청을 막아도 올릴 수 있게)
+
+  startUpload(user: AdminUser, input: CreateUploadInput): Promise<UploadSession> {
+    return createUpload(this.config, user.id, input, () => requirePermission(user, "job:create"));
+  }
+
+  uploadChunk(user: AdminUser, uploadId: string, index: number, chunk: unknown): Promise<UploadProgress> {
+    return appendChunk(this.config, user.id, uploadId, index, chunk);
+  }
+
+  finishUpload(user: AdminUser, uploadId: string): Promise<VideoAsset> {
+    return completeUpload(this.db, this.config, user.id, uploadId, () => requirePermission(user, "job:create"));
+  }
+
+  cancelUpload(user: AdminUser, uploadId: string): Promise<void> {
+    return cancelUpload(this.config, user.id, uploadId);
   }
 
   async getVideoPlaybackUrl(user: AdminUser, videoId: string): Promise<{ url: string | null }> {

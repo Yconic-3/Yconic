@@ -7,6 +7,7 @@ import { EDITABLE_STATUSES } from "./workflow";
  * 회원 콘텐츠 올리기 API (docs/decisions/0007). 로그인한 회원이면 누구나 쓴다.
  * 자기가 올린 영상·작업·콘텐츠만 보고 고칠 수 있다. 공개는 운영자(승인권자)가 승인한 뒤에만 된다.
  *   POST  /me/videos                    multipart(file, durationSec, width, height) → VideoAsset
+ *   POST  /me/uploads …                 영상 나눠 올리기 (upload.ts). 화면은 이쪽을 쓴다
  *   DELETE /me/videos/:id               → 204  (내가 올렸고 어디에도 연결되지 않은 영상만)
  *   POST  /me/content-jobs              CreateContentJobInput → ContentJob   (내가 올린 영상만)
  *   GET   /me/content-jobs/:id          → ContentJob

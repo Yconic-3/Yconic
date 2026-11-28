@@ -8,11 +8,14 @@ import {
   type AuthAccount,
   type ContentJob,
   type CreateContentJobInput,
+  type CreateUploadInput,
   type CourseId,
   type MyContent,
   type MyCourses,
   type SubmitMyContentInput,
   type UpdateMyGuidesInput,
+  type UploadProgress,
+  type UploadSession,
   type VideoAsset,
 } from "@yconic/shared-types";
 import { and, eq, notInArray } from "drizzle-orm";
@@ -21,6 +24,7 @@ import { join } from "node:path";
 import { ApiError, notFound } from "../common/errors";
 import { videosDir, type ApiConfig } from "../config";
 import { insertCreateJob, saveUploadedVideo, type UploadedVideoFile, type VideoMeta } from "../content/content.ops";
+import { appendChunk, cancelUpload, completeUpload, createUpload } from "../content/upload.ops";
 import { loadContents, loadJobs, writeAudit, type Actor, type Db } from "../content/content.store";
 import { CONFIG, DB } from "../tokens";
 
@@ -61,6 +65,24 @@ export class MeService {
 
   uploadVideo(account: AuthAccount, file: UploadedVideoFile | undefined, meta: VideoMeta | Error): Promise<VideoAsset> {
     return saveUploadedVideo(this.db, this.config, account.id, file, meta);
+  }
+
+  // 나눠 올리기 (서버 앞 프록시가 큰 요청을 막아도 올릴 수 있게)
+
+  startUpload(account: AuthAccount, input: CreateUploadInput): Promise<UploadSession> {
+    return createUpload(this.config, account.id, input);
+  }
+
+  uploadChunk(account: AuthAccount, uploadId: string, index: number, chunk: unknown): Promise<UploadProgress> {
+    return appendChunk(this.config, account.id, uploadId, index, chunk);
+  }
+
+  finishUpload(account: AuthAccount, uploadId: string): Promise<VideoAsset> {
+    return completeUpload(this.db, this.config, account.id, uploadId);
+  }
+
+  cancelUpload(account: AuthAccount, uploadId: string): Promise<void> {
+    return cancelUpload(this.config, account.id, uploadId);
   }
 
   async deleteVideo(account: AuthAccount, videoId: string): Promise<void> {

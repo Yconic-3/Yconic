@@ -17,6 +17,8 @@ export interface ApiConfig {
   /** 올린 영상 파일을 두는 폴더. 나중에 S3 호환 저장소로 바꾼다 */
   storageDir: string;
   maxVideoBytes: number;
+  /** 나눠 올릴 때 조각 하나의 크기. 서버 앞 프록시가 받는 크기(약 1MB)보다 작아야 한다 */
+  uploadChunkBytes: number;
   sessionDays: number;
   /** AI 제작 작업이 한 단계 진행하는 데 걸리는 시간 (모의 분석) */
   jobStageMs: number;
@@ -36,6 +38,7 @@ export function loadConfig(overrides: Partial<ApiConfig> = {}): ApiConfig {
     publicLinkAdminLogin: process.env.PUBLIC_LINK_ADMIN_LOGIN === "allow",
     storageDir: process.env.STORAGE_DIR ?? join(apiRoot, "storage"),
     maxVideoBytes: 2 * 1024 * 1024 * 1024,
+    uploadChunkBytes: Number(process.env.UPLOAD_CHUNK_BYTES ?? 768 * 1024),
     sessionDays: 30,
     jobStageMs: Number(process.env.JOB_STAGE_MS ?? 2500),
     ttsMs: Number(process.env.TTS_MS ?? 3000),
@@ -46,4 +49,9 @@ export function loadConfig(overrides: Partial<ApiConfig> = {}): ApiConfig {
 
 export function videosDir(config: ApiConfig): string {
   return join(config.storageDir, "videos");
+}
+
+/** 나눠 올리는 중인 조각을 모아 두는 폴더 (바깥에 공개하지 않는다) */
+export function uploadsDir(config: ApiConfig): string {
+  return join(config.storageDir, "uploads");
 }

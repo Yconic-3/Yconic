@@ -3,13 +3,13 @@ import { MulterModule } from "@nestjs/platform-express";
 import type { VideoAnalyzer } from "@yconic/content-analysis";
 import type { Database } from "@yconic/database";
 import { diskStorage } from "multer";
-import { extname } from "node:path";
 import { AdminController } from "./admin/admin.controller";
 import { AdminService } from "./admin/admin.service";
 import { AuthController } from "./auth/auth.controller";
 import { AuthService } from "./auth/auth.service";
 import { AdminGuard, AuthGuard } from "./auth/guards";
 import { newId } from "./common/ids";
+import { safeExt } from "./content/content.ops";
 import { videosDir, type ApiConfig } from "./config";
 import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
@@ -18,12 +18,6 @@ import { AI, ANALYZER, CONFIG, DB } from "./tokens";
 import type { AiModel } from "@yconic/ai-common";
 import { LearningService } from "./me/learning.service";
 import { WorkerService } from "./worker/worker.service";
-
-/** 확장자는 영문·숫자만 남긴다 (저장 파일 이름에 사용자가 보낸 글자가 섞이지 않게) */
-function safeExt(name: string): string {
-  const ext = extname(name).toLowerCase();
-  return /^\.[a-z0-9]{1,8}$/.test(ext) ? ext : "";
-}
 
 @Module({})
 export class AppModule {
