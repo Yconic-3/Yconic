@@ -29,6 +29,33 @@ export const SIGN_IN_ERROR_TEXT: Record<SignInError, string> = {
   WRONG_PASSWORD: "비밀번호가 맞지 않습니다.",
 };
 
+const MOCK_SIGNUPS_KEY = "yconic.mock.signups";
+
+/** 모의 모드에서 가입한 계정 (이 브라우저에만 남는다) */
+export function readMockSignups(): MockAccount[] {
+  try {
+    const list: unknown = JSON.parse(window.localStorage.getItem(MOCK_SIGNUPS_KEY) ?? "[]");
+    return Array.isArray(list) ? (list as MockAccount[]).filter((a) => a && typeof a.email === "string" && typeof a.password === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/** 모의 가입. 이미 있는 이메일이면 "EXISTS" */
+export function addMockSignup(name: string, email: string, password: string): AuthAccount | "EXISTS" {
+  const e = email.trim().toLowerCase();
+  const signups = readMockSignups();
+  if ([...MOCK_ACCOUNTS, ...signups].some((a) => a.email.toLowerCase() === e)) return "EXISTS";
+  const account: MockAccount = { id: `u-mock-${Date.now().toString(36)}`, name: name.trim(), email: e, adminRole: null, password };
+  try {
+    window.localStorage.setItem(MOCK_SIGNUPS_KEY, JSON.stringify([...signups, account]));
+  } catch {
+    // 저장하지 못하면 이번 로그인만 된다
+  }
+  const { password: _p, ...rest } = account;
+  return rest;
+}
+
 /** 이메일·비밀번호를 확인한다. 저장소에는 아무것도 쓰지 않는다. */
 export function verifyCredentials(email: string, password: string, accounts: MockAccount[] = MOCK_ACCOUNTS): AuthAccount | SignInError {
   const e = email.trim().toLowerCase();

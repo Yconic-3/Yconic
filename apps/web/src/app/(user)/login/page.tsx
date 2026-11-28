@@ -39,7 +39,7 @@ function Login() {
     // 관리자 화면으로 가려는데 일반 회원이면 들여보내지 않고 안내한다.
     if (goingToAdmin && !account.adminRole) {
       setCurrent(account);
-      setNotice("관리자 화면은 관리자 계정으로만 들어갈 수 있습니다. 아래 관리자 계정으로 다시 로그인해 주세요.");
+      setNotice("관리자 화면은 관리자 계정으로만 들어갈 수 있습니다. 관리자 계정으로 다시 로그인해 주세요.");
       return;
     }
     router.replace(next);

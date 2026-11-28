@@ -62,6 +62,7 @@ console.log(
     : "[api] 영상 분석: 모의 분석기 (ANTHROPIC_API_KEY가 없거나 VIDEO_ANALYZER=mock)",
 );
 console.log(ai ? "[api] 맞춤 안내: AI가 사용자별로 다시 씀" : "[api] 맞춤 안내: 규칙으로 고름 (API 키 없음)");
+console.log(`[api] 로그인: 이메일 가입 ${config.signup ? "받음" : "안 받음"}, 구글 로그인 ${config.googleClientId ? "켜짐" : "꺼짐 (GOOGLE_CLIENT_ID 없음)"}, 체험 계정 ${config.demoAccounts ? "보임" : "숨김"}, 관리자 이메일 ${config.superAdminEmails.length}개`);
 if (config.publicLinkAdminLogin) console.log("[api] 주의: 공개 링크에서도 관리자 계정으로 로그인할 수 있습니다 (PUBLIC_LINK_ADMIN_LOGIN=allow)");
 if (ai && (analysisLimit || guidesLimit)) {
   console.log(`[api] 하루 AI 한도: 영상 분석 ${analysisLimit ?? "제한 없음"}번, 맞춤 안내 ${guidesLimit ?? "제한 없음"}번`);

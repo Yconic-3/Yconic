@@ -14,14 +14,15 @@ import { videosDir, type ApiConfig } from "./config";
 import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
 import { PublicController } from "./public/public.controller";
-import { AI, ANALYZER, CONFIG, DB } from "./tokens";
+import { AI, ANALYZER, CONFIG, DB, GOOGLE } from "./tokens";
+import type { GoogleVerifier } from "./auth/google";
 import type { AiModel } from "@yconic/ai-common";
 import { LearningService } from "./me/learning.service";
 import { WorkerService } from "./worker/worker.service";
 
 @Module({})
 export class AppModule {
-  static create(config: ApiConfig, db: Database, analyzer: VideoAnalyzer, ai: AiModel | null): DynamicModule {
+  static create(config: ApiConfig, db: Database, analyzer: VideoAnalyzer, ai: AiModel | null, google: GoogleVerifier | null): DynamicModule {
     return {
       module: AppModule,
       imports: [
@@ -41,6 +42,7 @@ export class AppModule {
         { provide: DB, useValue: db },
         { provide: ANALYZER, useValue: analyzer },
         { provide: AI, useValue: ai },
+        { provide: GOOGLE, useValue: google },
         LearningService,
         AuthService,
         AuthGuard,
