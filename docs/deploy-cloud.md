@@ -36,6 +36,7 @@
 | 관리자 비밀번호 | `~/yconic-admin-passwords.txt` (본인만 읽을 수 있다) |
 
 서비스 네 개가 systemd에 등록되어 있다. 죽으면 5초 뒤 다시 켜지고, 서버가 재부팅되어도 켜진다.
+재부팅해 보니 40초~1분 뒤에 사이트가 다시 응답했다 (2026-11-28에 두 번 확인).
 
 | 서비스 | 하는 일 | 포트 |
 |---|---|---|
@@ -43,6 +44,24 @@
 | `yconic-api` | API. 영상 분석 작업기도 이 안에서 돈다 | 4000 |
 | `yconic-agent` | 사용자 AI 에이전트 | 4100 |
 | `yconic-web` | 웹앱 (`next start`) | 8080 (바깥에 공개) |
+
+### 로그아웃해도 DB가 살아 있게 하는 설정 (linger)
+
+서비스들은 서버 계정(root가 아닌 일반 계정)으로 돈다. 리눅스는 일반 계정의 접속이 모두 끊기면 그 계정의 공유 메모리(`/dev/shm`)를 지우는데(systemd-logind의 `RemoveIPC`),
+PostgreSQL이 그 공유 메모리를 쓴다. 그래서 **이 계정에 linger를 켜 두어야 한다.** 켜 두면 접속이 끊겨도 지우지 않는다.
+
+```bash
+# 켜기 (한 번만 하면 재부팅 뒤에도 남는다)
+sudo loginctl enable-linger "$USER"
+
+# 켜져 있는지 보기: yes가 나와야 한다
+loginctl show-user "$USER" -p Linger --value
+```
+
+- 꺼져 있을 때의 증상: 서비스는 모두 켜져 있고 사이트도 열리는데, SSH 접속을 끊은 뒤부터 DB에 새로 연결하는 요청이 실패한다.
+  `journalctl -u yconic-db`에 `could not open shared memory segment "/PostgreSQL.…": No such file or directory`가 남고, `ls /dev/shm`이 비어 있다.
+- 고치기: linger를 켠 뒤 `sudo systemctl restart yconic-db`, 이어서 `sudo systemctl restart yconic-api yconic-agent yconic-web`.
+- 2026-11-28에 서버를 재부팅해 보다가 찾았다. 켠 뒤 다시 재부팅하고 접속을 여러 번 끊었다 이어도 DB 연결이 됐다.
 
 ## 자주 쓰는 명령 (서버에 접속해서)
 
@@ -170,5 +189,7 @@ sudo systemctl restart yconic-db yconic-api yconic-agent yconic-web
    - `yconic-api`: `apps/api`에서 `pnpm exec tsx src/main.ts`
    - `yconic-agent`: `apps/user-agent`에서 `pnpm exec tsx src/main.ts`
    - `yconic-web`: `apps/web`에서 `pnpm exec next start -p 8080 -H 0.0.0.0`
-7. DB가 처음 켜지면 예시 데이터가 들어간다. 바로 관리자 비밀번호를 바꾼다.
-8. 업체에 쓸 포트 번호(8080)를 알린다.
+7. `sudo loginctl enable-linger "$USER"`로 linger를 켠다 (위 '로그아웃해도 DB가 살아 있게 하는 설정'). 빠뜨리면 접속을 끊은 뒤 DB 연결이 실패한다.
+8. DB가 처음 켜지면 예시 데이터가 들어간다. 바로 관리자 비밀번호를 바꾼다.
+9. 업체에 쓸 포트 번호(8080)를 알린다.
+10. 서버를 한 번 재부팅해서 서비스 네 개가 저절로 켜지는지, 접속을 끊었다 이은 뒤에도 로그인이 되는지 본다.
