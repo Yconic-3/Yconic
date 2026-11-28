@@ -139,4 +139,39 @@ describe("앱 상태 글: 이 사람과 지금 단계 안내", async () => {
     expect(text).toContain("어려워하는 동작 힙 힌지");
     expect(text).toContain("최근에 한 운동 의자 잡고 스쿼트");
   });
+
+  it("공개 운동 목록에 난이도·길이·요약을 싣는다 (찾기 도구 없이 바로 답하게)", async () => {
+    const { publishedExercises } = await import("./helpers");
+    const list = publishedExercises();
+    const text = appStateText({ screen: "home", exerciseId: null, sessionState: null, segmentIndex: null }, list);
+    const squat = list.find((e) => e.id === "c-squat")!;
+    const line = text.split("\n").find((l) => l.startsWith("- id c-squat:"))!;
+    expect(line).toContain("의자 잡고 스쿼트 (근력, 초급, 약 ");
+    expect(line).toContain(` — ${squat.summary}`);
+    // 처음 화면에서는 '지금 운동'을 싣지 않는다
+    expect(text).not.toContain("지금 운동");
+  });
+
+  it("운동이 많으면 목록에서 요약을 뺀다", async () => {
+    const { publishedExercises } = await import("./helpers");
+    const one = publishedExercises()[0]!;
+    const many = Array.from({ length: 21 }, (_, i) => ({ ...one, id: `c-${i}`, title: `운동 ${i}` }));
+    const text = appStateText({ screen: "home", exerciseId: null, sessionState: null, segmentIndex: null }, many);
+    expect(text).toContain("- id c-0: 운동 0 (");
+    expect(text).not.toContain(` — ${one.summary}`);
+  });
+
+  it("운동 화면에서는 지금 운동의 요약·주의사항·단계를 싣는다 (자세히 보기 도구 없이 바로 답하게)", async () => {
+    const { publishedExercises } = await import("./helpers");
+    const list = publishedExercises();
+    const squat = list.find((e) => e.id === "c-squat")!;
+    const text = appStateText({ screen: "exercise", exerciseId: "c-squat", sessionState: "IN_PROGRESS", segmentIndex: 1 }, list);
+    expect(text).toContain("지금 운동: 의자 잡고 스쿼트 (근력, 초급, 약 ");
+    expect(text).toContain(`지금 운동 요약: ${squat.summary}`);
+    expect(text).toContain(`지금 운동 주의사항: ${squat.precautions.join(" / ")}`);
+    expect(text).toContain(`지금 운동 단계: 1단계 ${squat.segments[0]!.title}(`);
+    expect(text).toContain(` → 2단계 ${squat.segments[1]!.title}(`);
+    // 단계별 안내 글 전체는 싣지 않는다
+    expect(text).not.toContain(squat.segments[2]!.voiceGuide);
+  });
 });
