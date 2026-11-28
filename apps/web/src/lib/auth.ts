@@ -1,4 +1,4 @@
-import { adminUserOfAccount, PASSWORD_MIN_LENGTH, type AdminApiErrorBody, type AdminUser, type AuthAccount, type AuthConfig, type LoginResponse } from "@yconic/shared-types";
+import { adminUserOfAccount, PASSWORD_MIN_LENGTH, type AdminApiErrorBody, type AdminUser, type AuthAccount, type AuthConfig, type LoginResponse, type SessionInfo } from "@yconic/shared-types";
 import { FIXTURE_ACCOUNTS } from "@yconic/fixtures";
 import { addMockSignup, MOCK_ACCOUNTS, readMockSignups, SIGN_IN_ERROR_TEXT, verifyCredentials } from "@/mock/auth";
 import { API_UNREACHABLE_MESSAGE, apiBaseUrl, getApiMode, type ApiMode } from "./api-mode";
@@ -20,6 +20,8 @@ interface StoredSession {
   /** http 모드의 로그인 토큰 */
   token: string | null;
   expiresAt: string | null;
+  /** 로그인 유지 (docs/decisions/0017). true면 브라우저를 닫아도 남고, false면 닫을 때 지워진다. 예전 로그인에는 없다(유지로 본다) */
+  remember?: boolean;
 }
 
 const SESSION_KEY = "yconic.session";
@@ -50,27 +52,53 @@ export function safeNextPath(next: string | null | undefined, fallback = "/"): s
 
 // ── 브라우저 저장소 ──
 
+/**
+ * 로그인을 두는 곳. 로그인 유지를 켰으면 localStorage(브라우저를 닫아도 남는다),
+ * 껐으면 sessionStorage(탭이나 브라우저를 닫으면 지워진다)에 둔다.
+ */
+function storages(): Storage[] {
+  const list: Storage[] = [];
+  for (const get of [() => window.sessionStorage, () => window.localStorage]) {
+    try {
+      const storage = get();
+      if (storage) list.push(storage);
+    } catch {
+      // 저장소를 막아 둔 브라우저
+    }
+  }
+  return list;
+}
+
 function readStored(): StoredSession | null {
   try {
     window.localStorage.removeItem(LEGACY_SESSION_KEY);
-    const raw = window.localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    const s = JSON.parse(raw) as StoredSession;
-    // 모드를 바꿨거나 기간이 지난 로그인은 버린다.
-    if (s.mode !== getApiMode() || !s.account?.id || (s.expiresAt && Date.parse(s.expiresAt) <= Date.now())) {
-      window.localStorage.removeItem(SESSION_KEY);
-      return null;
-    }
-    return s;
   } catch {
-    return null;
+    // 지우지 못해도 된다
   }
+  for (const storage of storages()) {
+    try {
+      const raw = storage.getItem(SESSION_KEY);
+      if (!raw) continue;
+      const s = JSON.parse(raw) as StoredSession;
+      // 모드를 바꿨거나 기간이 지난 로그인은 버린다.
+      if (s.mode !== getApiMode() || !s.account?.id || (s.expiresAt && Date.parse(s.expiresAt) <= Date.now())) {
+        storage.removeItem(SESSION_KEY);
+        continue;
+      }
+      return s;
+    } catch {
+      // 망가진 값은 건너뛴다
+    }
+  }
+  return null;
 }
 
 function writeStored(s: StoredSession | null) {
   try {
-    if (s) window.localStorage.setItem(SESSION_KEY, JSON.stringify(s));
-    else window.localStorage.removeItem(SESSION_KEY);
+    for (const storage of storages()) storage.removeItem(SESSION_KEY);
+    if (!s) return;
+    const target = s.remember === false ? window.sessionStorage : window.localStorage;
+    target.setItem(SESSION_KEY, JSON.stringify(s));
   } catch {
     // 저장하지 못하면 새로 고칠 때 로그아웃된다.
   }
@@ -89,13 +117,14 @@ export function getAuthToken(): string | null {
 /**
  * 남아 있는 로그인이 아직 유효한지 서버에 확인한다 (http 모드).
  * 토큰이 만료되었거나 로그아웃되었으면 지우고 null을 준다. 서버에 연결하지 못하면 남은 로그인을 그대로 쓴다.
+ * 로그인 유지면 서버가 기간을 늘려 주므로, 받은 만료 시각을 다시 적어 둔다 (들어올 때마다 불러야 로그인이 풀리지 않는다).
  */
 export async function verifySession(): Promise<SignedInAccount | null> {
   const s = readStored();
   if (!s || s.mode === "mock" || !s.token) return s?.account ?? null;
   let res: Response;
   try {
-    res = await fetch(`${apiBaseUrl()}/auth/me`, { headers: { Authorization: `Bearer ${s.token}` } });
+    res = await fetch(`${apiBaseUrl()}/auth/session`, { headers: { Authorization: `Bearer ${s.token}` } });
   } catch {
     return s.account;
   }
@@ -104,21 +133,23 @@ export async function verifySession(): Promise<SignedInAccount | null> {
     return null;
   }
   if (!res.ok) return s.account;
-  const account = (await res.json()) as SignedInAccount;
-  writeStored({ ...s, account });
-  return account;
+  const info = (await res.json()) as SessionInfo;
+  // 확인하는 사이에 로그아웃했거나 다른 계정으로 바꿨으면 건드리지 않는다
+  if (readStored()?.token !== s.token) return readStored()?.account ?? null;
+  writeStored({ ...s, account: info.account, expiresAt: info.expiresAt });
+  return info.account;
 }
 
 export type SignInResult = { ok: true; account: SignedInAccount } | { ok: false; message: string };
 
 /** 로그인·가입 요청을 보내고, 성공하면 받은 토큰을 브라우저에 보관한다 (http 모드) */
-async function postAuth(path: string, body: unknown, failed: string): Promise<SignInResult> {
+async function postAuth(path: string, body: Record<string, unknown>, failed: string, remember: boolean): Promise<SignInResult> {
   let res: Response;
   try {
     res = await fetch(`${apiBaseUrl()}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, remember }),
     });
   } catch {
     return { ok: false, message: API_UNREACHABLE_MESSAGE };
@@ -128,20 +159,21 @@ async function postAuth(path: string, body: unknown, failed: string): Promise<Si
     return { ok: false, message: err?.message ?? `${failed} (${res.status})` };
   }
   const login = (await res.json()) as LoginResponse;
-  writeStored({ mode: "http", account: login.account, token: login.token, expiresAt: login.expiresAt });
+  writeStored({ mode: "http", account: login.account, token: login.token, expiresAt: login.expiresAt, remember });
   return { ok: true, account: login.account };
 }
 
-export async function signIn(email: string, password: string): Promise<SignInResult> {
+/** remember: 로그인 유지. 끄면 브라우저를 닫을 때 로그인이 풀린다 */
+export async function signIn(email: string, password: string, remember = true): Promise<SignInResult> {
   if (!email.trim() || !password) return { ok: false, message: SIGN_IN_ERROR_TEXT.EMPTY };
 
   if (getApiMode() === "mock") {
     const result = verifyCredentials(email, password, [...MOCK_ACCOUNTS, ...readMockSignups()]);
     if (typeof result === "string") return { ok: false, message: SIGN_IN_ERROR_TEXT[result] };
-    writeStored({ mode: "mock", account: result, token: null, expiresAt: null });
+    writeStored({ mode: "mock", account: result, token: null, expiresAt: null, remember });
     return { ok: true, account: result };
   }
-  return postAuth("/auth/login", { email, password }, "로그인하지 못했습니다.");
+  return postAuth("/auth/login", { email, password }, "로그인하지 못했습니다.", remember);
 }
 
 /** 가입할 때 화면에서 먼저 보는 것. 문제가 없으면 null (서버도 같은 것을 다시 확인한다) */
@@ -153,23 +185,23 @@ export function signUpProblem(name: string, email: string, password: string): st
 }
 
 /** 이메일로 가입한다. 가입하면 바로 로그인된다 */
-export async function signUp(name: string, email: string, password: string): Promise<SignInResult> {
+export async function signUp(name: string, email: string, password: string, remember = true): Promise<SignInResult> {
   const problem = signUpProblem(name, email, password);
   if (problem) return { ok: false, message: problem };
 
   if (getApiMode() === "mock") {
     const result = addMockSignup(name, email, password);
     if (result === "EXISTS") return { ok: false, message: "이미 가입된 이메일입니다. 로그인해 주세요." };
-    writeStored({ mode: "mock", account: result, token: null, expiresAt: null });
+    writeStored({ mode: "mock", account: result, token: null, expiresAt: null, remember });
     return { ok: true, account: result };
   }
-  return postAuth("/auth/signup", { name: name.trim(), email: email.trim(), password }, "가입하지 못했습니다.");
+  return postAuth("/auth/signup", { name: name.trim(), email: email.trim(), password }, "가입하지 못했습니다.", remember);
 }
 
 /** 구글 로그인 버튼이 돌려준 ID 토큰으로 로그인한다. 처음이면 계정이 만들어진다 */
-export async function signInWithGoogle(credential: string): Promise<SignInResult> {
+export async function signInWithGoogle(credential: string, remember = true): Promise<SignInResult> {
   if (getApiMode() === "mock") return { ok: false, message: "구글 로그인은 서버에 연결했을 때만 쓸 수 있습니다." };
-  return postAuth("/auth/google", { credential }, "구글로 로그인하지 못했습니다.");
+  return postAuth("/auth/google", { credential }, "구글로 로그인하지 못했습니다.", remember);
 }
 
 /** 서버 없이 볼 때의 로그인 화면 설정 */
@@ -197,6 +229,11 @@ export function fetchAuthConfig(): Promise<AuthConfig> {
 /** 체험 계정(예시 데이터의 계정)인지 */
 export function isDemoAccount(account: Pick<SignedInAccount, "id">): boolean {
   return DEMO_ACCOUNTS.some((a) => a.id === account.id);
+}
+
+/** 지금 로그인이 로그인 유지인지 (로그인 화면의 처음 값으로 쓴다). 로그인 전이면 true */
+export function isRememberedSession(): boolean {
+  return readStored()?.remember !== false;
 }
 
 export function signOut(): void {

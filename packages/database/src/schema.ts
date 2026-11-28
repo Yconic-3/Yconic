@@ -71,6 +71,8 @@ export const authSessions = pgTable(
       .references(() => accounts.id, { onDelete: "cascade" }),
     createdAt: createdAt(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    /** 로그인 유지. true면 쓰는 동안 만료 시각을 뒤로 민다 (docs/decisions/0017) */
+    remember: boolean("remember").notNull().default(true),
   },
   (t) => [index("auth_sessions_account_idx").on(t.accountId)],
 );

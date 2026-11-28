@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { accounts, authSessions, type Database } from "@yconic/database";
 import { hashPassword, verifyPassword } from "@yconic/database/password";
-import type { AuthAccount, AuthConfig, LoginResponse, SignupInput } from "@yconic/shared-types";
+import type { AuthAccount, AuthConfig, LoginResponse, SessionInfo, SignupInput } from "@yconic/shared-types";
 import { and, eq, gt, sql } from "drizzle-orm";
 import { createHash, randomBytes } from "node:crypto";
 import { ApiError } from "../common/errors";
@@ -57,11 +57,16 @@ export class AuthService {
     return row;
   }
 
-  /** 로그인 유지 토큰을 새로 만들어 준다 */
-  private async issue(row: Pick<AccountRow, "id" | "name" | "email" | "adminRole">): Promise<LoginResponse> {
+  /** 로그인이 남는 시간. 로그인 유지면 길게(30일), 아니면 짧게(하루) */
+  private lifetimeMs(remember: boolean): number {
+    return remember ? this.config.sessionDays * 24 * HOUR_MS : this.config.shortSessionHours * HOUR_MS;
+  }
+
+  /** 로그인 토큰을 새로 만들어 준다 */
+  private async issue(row: Pick<AccountRow, "id" | "name" | "email" | "adminRole">, remember: boolean): Promise<LoginResponse> {
     const token = randomBytes(32).toString("base64url");
-    const expiresAt = new Date(Date.now() + this.config.sessionDays * 24 * 60 * 60 * 1000);
-    await this.db.insert(authSessions).values({ tokenHash: hashToken(token), accountId: row.id, expiresAt });
+    const expiresAt = new Date(Date.now() + this.lifetimeMs(remember));
+    await this.db.insert(authSessions).values({ tokenHash: hashToken(token), accountId: row.id, expiresAt, remember });
     return { token, expiresAt: expiresAt.toISOString(), account: { id: row.id, name: row.name, email: row.email, adminRole: row.adminRole } };
   }
 
@@ -70,7 +75,7 @@ export class AuthService {
    * 저장소가 공개라 예시 관리자 계정의 비밀번호도 공개되어 있으므로, 공개 링크에서는 관리자 계정으로 로그인할 수 없다.
    * 관리자 화면은 이 컴퓨터(localhost)에서만 쓴다.
    */
-  async login(email: unknown, password: unknown, viaPublicLink = false): Promise<LoginResponse> {
+  async login(email: unknown, password: unknown, viaPublicLink = false, remember = true): Promise<LoginResponse> {
     if (typeof email !== "string" || typeof password !== "string" || !email.trim() || !password) {
       throw new ApiError("VALIDATION", "이메일과 비밀번호를 모두 입력해 주세요.");
     }
@@ -82,7 +87,7 @@ export class AuthService {
     if (viaPublicLink && row.adminRole && !this.config.publicLinkAdminLogin) {
       throw new ApiError("FORBIDDEN", "공개 링크에서는 관리자 계정으로 로그인할 수 없습니다. 일반 회원으로 로그인해 주세요.");
     }
-    return this.issue(row);
+    return this.issue(row, remember);
   }
 
   /** 한 곳(IP)과 하루 전체의 가입 수를 센다. 넘으면 거절한다 */
@@ -120,7 +125,7 @@ export class AuthService {
       if (isDuplicate(e)) throw new ApiError("CONFLICT", "이미 가입된 이메일입니다. 로그인해 주세요.");
       throw e;
     }
-    return this.issue(row);
+    return this.issue(row, input.remember !== false);
   }
 
   /**
@@ -129,7 +134,7 @@ export class AuthService {
    *   이메일 가입은 본인 확인을 하지 않으므로, 남이 먼저 만들어 둔 계정일 수 있다. 구글이 이메일 주인을 확인해 준 쪽만 남긴다.
    * - 관리자로 정해 둔 이메일(SUPER_ADMIN_EMAILS)이면 최고 관리자로 만든다.
    */
-  async googleLogin(credential: unknown): Promise<LoginResponse> {
+  async googleLogin(credential: unknown, remember = true): Promise<LoginResponse> {
     if (!this.google) throw new ApiError("VALIDATION", "구글 로그인이 켜져 있지 않습니다.");
     if (typeof credential !== "string" || !credential) throw new ApiError("VALIDATION", "구글 로그인 정보를 보내 주세요.");
     const who = await this.google(credential);
@@ -155,19 +160,37 @@ export class AuthService {
       }
       return found!;
     });
-    return this.issue(row);
+    return this.issue(row, remember);
+  }
+
+  /**
+   * Authorization 헤더의 토큰으로 지금 로그인을 찾는다. 없거나 만료되었으면 null.
+   * 로그인 유지(remember)면 쓰는 동안 만료 시각을 뒤로 민다: 남은 기간이 절반 아래로 내려가면 다시 처음 길이로 늘린다.
+   * 그래서 꾸준히 쓰는 사람은 다시 로그인하지 않는다.
+   */
+  async session(authorization: string | undefined): Promise<SessionInfo | null> {
+    const token = bearerToken(authorization);
+    if (!token) return null;
+    const tokenHash = hashToken(token);
+    const now = Date.now();
+    const [row] = await this.db
+      .select({ id: accounts.id, name: accounts.name, email: accounts.email, adminRole: accounts.adminRole, expiresAt: authSessions.expiresAt, remember: authSessions.remember })
+      .from(authSessions)
+      .innerJoin(accounts, eq(authSessions.accountId, accounts.id))
+      .where(and(eq(authSessions.tokenHash, tokenHash), gt(authSessions.expiresAt, new Date(now))));
+    if (!row) return null;
+    let expiresAt = row.expiresAt;
+    const lifetime = this.lifetimeMs(true);
+    if (row.remember && expiresAt.getTime() - now < lifetime / 2) {
+      expiresAt = new Date(now + lifetime);
+      await this.db.update(authSessions).set({ expiresAt }).where(eq(authSessions.tokenHash, tokenHash));
+    }
+    return { account: { id: row.id, name: row.name, email: row.email, adminRole: row.adminRole }, expiresAt: expiresAt.toISOString() };
   }
 
   /** Authorization 헤더의 토큰으로 계정을 찾는다. 없거나 만료되었으면 null */
   async authenticate(authorization: string | undefined): Promise<AuthAccount | null> {
-    const token = bearerToken(authorization);
-    if (!token) return null;
-    const [row] = await this.db
-      .select({ id: accounts.id, name: accounts.name, email: accounts.email, adminRole: accounts.adminRole })
-      .from(authSessions)
-      .innerJoin(accounts, eq(authSessions.accountId, accounts.id))
-      .where(and(eq(authSessions.tokenHash, hashToken(token)), gt(authSessions.expiresAt, new Date())));
-    return row ?? null;
+    return (await this.session(authorization))?.account ?? null;
   }
 
   async logout(authorization: string | undefined): Promise<void> {

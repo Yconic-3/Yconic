@@ -8,6 +8,7 @@ import type { Id } from "./common";
  *   POST /auth/google  GoogleLoginInput → LoginResponse (구글 계정으로 로그인. 처음이면 가입)
  *   GET  /auth/config  → AuthConfig                   (로그인 화면이 무엇을 보여 줄지)
  *   GET  /auth/me      → AuthAccount                  (Authorization: Bearer <token>)
+ *   GET  /auth/session → SessionInfo                  (로그인이 아직 유효한지와 언제까지인지. 로그인 유지면 기간을 늘려 준다)
  *   POST /auth/logout  → 204
  * 토큰은 브라우저에 보관하고, 로그인이 필요한 요청마다 Authorization 헤더로 보낸다.
  */
@@ -24,6 +25,8 @@ export interface AuthAccount {
 export interface LoginInput {
   email: string;
   password: string;
+  /** 로그인 유지 (docs/decisions/0017). 안 보내면 유지한다 */
+  remember?: boolean;
 }
 
 /** 이메일로 가입 (docs/decisions/0016) */
@@ -32,6 +35,8 @@ export interface SignupInput {
   name: string;
   email: string;
   password: string;
+  /** 로그인 유지. 안 보내면 유지한다 */
+  remember?: boolean;
 }
 
 /** 비밀번호 최소 길이 */
@@ -40,6 +45,8 @@ export const PASSWORD_MIN_LENGTH = 8;
 /** 구글 계정으로 로그인. 구글 로그인 버튼이 돌려준 ID 토큰을 그대로 보낸다 */
 export interface GoogleLoginInput {
   credential: string;
+  /** 로그인 유지. 안 보내면 유지한다 */
+  remember?: boolean;
 }
 
 /** 로그인 화면이 무엇을 보여 줄지 */
@@ -56,6 +63,13 @@ export interface LoginResponse {
   token: string;
   account: AuthAccount;
   /** ISO 시각. 이 시각이 지나면 다시 로그인해야 한다 */
+  expiresAt: string;
+}
+
+/** 지금 로그인의 상태 */
+export interface SessionInfo {
+  account: AuthAccount;
+  /** ISO 시각. 로그인 유지면 쓰는 동안 계속 뒤로 밀린다 */
   expiresAt: string;
 }
 

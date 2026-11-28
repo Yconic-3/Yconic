@@ -1,0 +1,1 @@
+ALTER TABLE "auth_sessions" ADD COLUMN "remember" boolean DEFAULT true NOT NULL;

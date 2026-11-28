@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchAuthConfig, isDemoAccount, readSignedInAccount, signIn, signInWithGoogle, signOut, signUp, signUpProblem } from "./auth";
+import { fetchAuthConfig, getAuthToken, isDemoAccount, isRememberedSession, readSignedInAccount, signIn, signInWithGoogle, signOut, signUp, signUpProblem, verifySession } from "./auth";
 
 function fakeStorage() {
   const data = new Map<string, string>();
@@ -56,5 +56,68 @@ describe("서버 없이 볼 때(mock)의 가입과 로그인", () => {
   it("구글 로그인은 쓸 수 없고, 로그인 화면에는 가입과 체험 계정만 보인다", async () => {
     expect(await signInWithGoogle("anything")).toMatchObject({ ok: false });
     expect(await fetchAuthConfig()).toEqual({ googleClientId: null, signup: true, demoAccounts: true });
+  });
+});
+
+describe("로그인 유지", () => {
+  let local: ReturnType<typeof fakeStorage>;
+  let session: ReturnType<typeof fakeStorage>;
+  beforeEach(() => {
+    local = fakeStorage();
+    session = fakeStorage();
+    vi.stubGlobal("window", { localStorage: local, sessionStorage: session });
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("켜면 브라우저를 닫아도 남는 곳에, 끄면 닫을 때 지워지는 곳에 둔다", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_MODE", "mock");
+    await signIn("member@example.com", "member1234");
+    expect(local.getItem("yconic.session")).not.toBeNull();
+    expect(session.getItem("yconic.session")).toBeNull();
+    expect(isRememberedSession()).toBe(true);
+
+    // 끄고 다시 로그인하면 옮겨 간다 (두 곳에 함께 남지 않는다)
+    await signIn("member@example.com", "member1234", false);
+    expect(local.getItem("yconic.session")).toBeNull();
+    expect(session.getItem("yconic.session")).not.toBeNull();
+    expect(isRememberedSession()).toBe(false);
+    expect(readSignedInAccount()?.email).toBe("member@example.com");
+
+    signOut();
+    expect(session.getItem("yconic.session")).toBeNull();
+    expect(readSignedInAccount()).toBeNull();
+  });
+
+  it("들어올 때 서버에 물어 만료 시각을 새로 적고, 서버에서 끝난 로그인은 지운다", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_MODE", "http");
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "/api");
+    const account = { id: "u-1", name: "가", email: "a@example.org", adminRole: null };
+    const soon = new Date(Date.now() + 5 * 86_400_000).toISOString();
+    const later = new Date(Date.now() + 30 * 86_400_000).toISOString();
+    local.setItem("yconic.session", JSON.stringify({ mode: "http", account, token: "tok", expiresAt: soon, remember: true }));
+
+    const calls: string[] = [];
+    let status = 200;
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      calls.push(`${url} ${(init.headers as Record<string, string>).Authorization}`);
+      return status === 200 ? new Response(JSON.stringify({ account: { ...account, name: "나" }, expiresAt: later }), { status: 200 }) : new Response("{}", { status });
+    });
+
+    expect((await verifySession())?.name).toBe("나");
+    expect(calls).toEqual(["/api/auth/session Bearer tok"]);
+    expect(JSON.parse(local.getItem("yconic.session")!)).toMatchObject({ expiresAt: later, token: "tok", remember: true });
+
+    // 서버가 잠깐 안 되면(500) 남은 로그인을 그대로 쓴다
+    status = 500;
+    expect((await verifySession())?.name).toBe("나");
+    expect(getAuthToken()).toBe("tok");
+
+    // 서버에서 끝난 로그인(401)은 지운다
+    status = 401;
+    expect(await verifySession()).toBeNull();
+    expect(local.getItem("yconic.session")).toBeNull();
   });
 });

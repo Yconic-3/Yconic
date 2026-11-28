@@ -174,7 +174,7 @@ export function parseSignup(body: unknown): SignupInput {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail("이메일 주소를 확인해 주세요.");
   const password = str(b.password, "비밀번호", { max: 200 });
   if (password.length < PASSWORD_MIN_LENGTH) fail(`비밀번호는 ${PASSWORD_MIN_LENGTH}자 이상이어야 합니다.`);
-  return { name, email, password };
+  return { name, email, password, remember: b.remember !== false };
 }
 
 /** 나눠 올리기를 시작할 때 보내는 영상 정보 */
