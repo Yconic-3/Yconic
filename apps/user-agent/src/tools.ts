@@ -20,7 +20,19 @@ import type { Backend } from "./backend";
  * - 정보 도구: 공개 운동 찾기·자세히 보기. 백엔드 사용자 API만 부른다.
  * - 화면 도구: 운동 열기·재생 조작·말 속도·화면 이동. 에이전트가 직접 실행하지 않고 할 일(AgentAction)로 모아
  *   화면에 돌려준다. 운동 진행 상태는 화면이 관리한다.
+ *   화면 도구는 사용자에게 들려줄 말(say)을 함께 받는다. 화면 도구만 부른 차례에서는 그 말이 그대로 답이 되어,
+ *   Claude를 한 번 더 부르지 않는다 (docs/decisions/0019: 음성 대화는 빨라야 한다).
  */
+
+/** 화면 도구. 결과를 보고 다시 생각할 것이 없으므로, 이것만 불렀으면 say가 답이다 */
+export const SCREEN_TOOLS: ReadonlySet<string> = new Set(["open_exercise", "control_playback", "change_speech_rate", "go_to"]);
+
+const SAY = {
+  type: "string",
+  description:
+    "사용자에게 소리로 들려줄 말. 한국어 존댓말로 한두 문장. 이 도구만 부르면 이 말이 그대로 답으로 읽히고 다시 말할 기회가 없으니, " +
+    "묻는 말에 대한 답과 무엇을 할지를 여기에 다 담는다. '말하는 법'을 따른다.",
+} as const;
 
 const CATEGORY_CHOICES = [...EXERCISE_CATEGORIES, "ALL"] as const;
 const SEARCH_LIMIT = 10;
@@ -69,8 +81,9 @@ export const USER_AGENT_TOOLS: ClaudeTool[] = [
       properties: {
         exercise_id: { type: "string", description: "공개 운동 목록의 id" },
         autoplay: { type: "boolean" },
+        say: SAY,
       },
-      required: ["exercise_id", "autoplay"],
+      required: ["exercise_id", "autoplay", "say"],
       additionalProperties: false,
     },
   },
@@ -82,8 +95,8 @@ export const USER_AGENT_TOOLS: ClaudeTool[] = [
     strict: true,
     input_schema: {
       type: "object",
-      properties: { command: { type: "string", enum: [...AGENT_PLAYBACK_COMMANDS] } },
-      required: ["command"],
+      properties: { command: { type: "string", enum: [...AGENT_PLAYBACK_COMMANDS] }, say: SAY },
+      required: ["command", "say"],
       additionalProperties: false,
     },
   },
@@ -93,8 +106,8 @@ export const USER_AGENT_TOOLS: ClaudeTool[] = [
     strict: true,
     input_schema: {
       type: "object",
-      properties: { direction: { type: "string", enum: ["SLOWER", "FASTER"] } },
-      required: ["direction"],
+      properties: { direction: { type: "string", enum: ["SLOWER", "FASTER"] }, say: SAY },
+      required: ["direction", "say"],
       additionalProperties: false,
     },
   },
@@ -104,8 +117,8 @@ export const USER_AGENT_TOOLS: ClaudeTool[] = [
     strict: true,
     input_schema: {
       type: "object",
-      properties: { destination: { type: "string", enum: ["HOME", "BACK"] } },
-      required: ["destination"],
+      properties: { destination: { type: "string", enum: ["HOME", "BACK"] }, say: SAY },
+      required: ["destination", "say"],
       additionalProperties: false,
     },
   },
@@ -121,6 +134,12 @@ export interface ToolContext {
 export interface ToolOutcome {
   content: string;
   isError: boolean;
+}
+
+/** 화면 도구에 함께 온, 사용자에게 들려줄 말. 없으면 빈 문자열 */
+export function sayOf(rawInput: unknown): string {
+  const say = rawInput && typeof rawInput === "object" ? (rawInput as { say?: unknown }).say : undefined;
+  return typeof say === "string" ? say.trim() : "";
 }
 
 const ok = (value: unknown): ToolOutcome => ({ content: JSON.stringify(value), isError: false });

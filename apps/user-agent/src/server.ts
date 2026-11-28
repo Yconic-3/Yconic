@@ -16,7 +16,7 @@ import { parseChatRequest, ValidationError } from "./validate";
 const BODY_LIMIT = 32 * 1024;
 
 export interface AgentServerOptions {
-  config: Pick<AgentConfig, "webOrigins" | "rateLimitPerMinute">;
+  config: Pick<AgentConfig, "webOrigins" | "rateLimitPerMinute"> & Partial<Pick<AgentConfig, "singleCall">>;
   /** null이면 AI가 꺼져 있다 (API 키 없음) */
   model: AiModel | null;
   backend: Backend;
@@ -119,7 +119,7 @@ export function createAgentServer({ config, model, backend, quiet }: AgentServer
         }
         const request = parseChatRequest(await readJson(req));
         if (!model) throw new HttpError(503, "AI_DISABLED", "AI가 꺼져 있습니다 (ANTHROPIC_API_KEY 없음).");
-        send(res, 200, await runUserAgent(request, { model, backend }));
+        send(res, 200, await runUserAgent(request, { model, backend, singleCall: config.singleCall }));
         return;
       }
       throw new HttpError(404, "NOT_FOUND", "없는 주소입니다.");

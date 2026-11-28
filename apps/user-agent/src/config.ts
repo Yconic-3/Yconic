@@ -9,6 +9,8 @@ export interface AgentConfig {
   ai: AiSettings;
   /** 한 IP가 1분에 보낼 수 있는 대화 요청 수 */
   rateLimitPerMinute: number;
+  /** 화면 도구만 부른 차례에서 Claude를 다시 부르지 않을지 (기본 켬, AGENT_SINGLE_CALL=off 로 끈다) */
+  singleCall: boolean;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
@@ -18,5 +20,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
     webOrigins: (env.WEB_ORIGIN ?? "http://localhost:3000").split(",").map((s) => s.trim()),
     ai: aiSettingsFromEnv(env),
     rateLimitPerMinute: Number(env.AGENT_RATE_LIMIT ?? 30),
+    singleCall: env.AGENT_SINGLE_CALL !== "off",
   };
 }

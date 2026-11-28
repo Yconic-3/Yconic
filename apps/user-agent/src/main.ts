@@ -25,6 +25,7 @@ server.listen(config.port, () => {
       : "[user-agent] AI 꺼짐: ANTHROPIC_API_KEY가 없어 웹앱은 규칙 기반 해석을 씁니다.",
   );
   if (model && dailyLimit) console.log(`[user-agent] 하루 AI 한도: ${dailyLimit}번`);
+  if (model) console.log(`[user-agent] 조작 명령: ${config.singleCall ? "Claude 한 번으로 답함" : "도구 결과를 보고 한 번 더 부름 (AGENT_SINGLE_CALL=off)"}`);
 });
 
 const shutdown = () => server.close(() => process.exit(0));
