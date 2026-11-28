@@ -49,6 +49,16 @@ function safeActions(actions: AgentAction[]): AgentAction[] {
   return actions.filter((a) => a.type !== "OPEN_EXERCISE" && !(a.type === "PLAYBACK" && a.command !== "STOP"));
 }
 
+/** 답을 만드는 동안 중간에 알리는 것 (POST /chat/stream). 없으면 끝난 뒤에 한 번에 돌려준다 */
+export interface UserAgentHooks {
+  /** 답의 다음 글자들 */
+  onText?(delta: string): void;
+  /** 지금까지 준 글을 버린다 (도구를 부르기 전의 말이었거나, 다시 답하기 시작했다) */
+  onReset?(): void;
+  /** 지금까지 정해진 할 일 (도구를 실행한 뒤, 다음 답을 받기 전에) */
+  onActions?(actions: AgentAction[]): void;
+}
+
 /** 여러 화면 도구가 함께 왔을 때 읽을 말: 멈춤(STOP)의 말이 먼저, 아니면 마지막 도구의 말 */
 function replyFromScreenTools(uses: { name: string; input: unknown }[]): string {
   const stop = uses.find((u) => u.name === "control_playback" && (u.input as { command?: unknown } | null)?.command === "STOP");
@@ -66,7 +76,7 @@ function replyFromScreenTools(uses: { name: string; input: unknown }[]): string 
  * 화면 도구(열기·재생·속도·이동)만 부른 차례는 거기서 끝낸다: 도구에 함께 온 말이 답이다.
  * 결과를 보고 다시 생각할 것이 없는데 한 번 더 부르면 그만큼 사람이 기다린다 (docs/decisions/0019).
  */
-export async function runUserAgent(request: AgentChatRequest, deps: UserAgentDeps): Promise<AgentChatResponse> {
+export async function runUserAgent(request: AgentChatRequest, deps: UserAgentDeps, hooks: UserAgentHooks = {}): Promise<AgentChatResponse> {
   const exercises = await deps.backend.listExercises();
   const actions: AgentAction[] = [];
   const messages: ClaudeMessageParam[] = [
@@ -81,16 +91,39 @@ export async function runUserAgent(request: AgentChatRequest, deps: UserAgentDep
   ];
 
   let lastText = "";
+  // 글자가 나오는 대로 알린다. 답은 REPLY_CHARS에서 자르므로 그 뒤의 글은 알리지 않는다
+  let sent = 0;
+  const reset = () => {
+    if (sent > 0) hooks.onReset?.();
+    sent = 0;
+  };
+  const streaming = hooks.onText
+    ? {
+        onText: (delta: string) => {
+          const room = REPLY_CHARS - 1 - sent;
+          if (room <= 0) return;
+          const piece = delta.slice(0, room);
+          sent += piece.length;
+          hooks.onText!(piece);
+        },
+        onRestart: reset,
+      }
+    : undefined;
+
   for (let step = 0; step < MAX_STEPS; step++) {
-    const response = await deps.model.run({
-      system: USER_AGENT_SYSTEM_PROMPT,
-      tools: USER_AGENT_TOOLS,
-      messages,
-      max_tokens: MAX_TOKENS,
-    });
+    const response = await deps.model.run(
+      {
+        system: USER_AGENT_SYSTEM_PROMPT,
+        tools: USER_AGENT_TOOLS,
+        messages,
+        max_tokens: MAX_TOKENS,
+      },
+      streaming,
+    );
 
     // 대체 모델까지 모두 거절했다. 이미 한 조작 중 멈춤만 남긴다
     if (response.stop_reason === "refusal") {
+      reset();
       return { reply: REFUSAL_REPLY, actions: safeActions(actions).filter((a) => a.type === "PLAYBACK" && a.command === "STOP") };
     }
 
@@ -104,6 +137,8 @@ export async function runUserAgent(request: AgentChatRequest, deps: UserAgentDep
       return { reply: clip(reply), actions: safeActions(actions) };
     }
 
+    // 도구를 부르는 차례에 나온 글은 답이 아니다 (화면이 읽기 시작했다면 버리게 한다)
+    reset();
     messages.push({ role: "assistant", content });
     const results: ClaudeToolResultBlockParam[] = [];
     let failed = false;
@@ -118,6 +153,8 @@ export async function runUserAgent(request: AgentChatRequest, deps: UserAgentDep
       const say = replyFromScreenTools(toolUses);
       if (say) return { reply: clip(say), actions: safeActions(actions) };
     }
+    // 할 일이 있으면 답을 받기 전에 알린다. 화면은 할 일이 있을 때는 먼저 읽지 않는다 (읽는 중에 화면이 바뀌지 않게)
+    if (actions.length > 0) hooks.onActions?.(safeActions(actions));
     messages.push({ role: "user", content: results });
   }
 

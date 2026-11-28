@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { AiError, type AiModel } from "@yconic/ai-common";
-import type { AgentErrorCode, AgentHealth } from "@yconic/shared-types";
+import type { AgentErrorCode, AgentHealth, AgentStreamEvent } from "@yconic/shared-types";
 import { runUserAgent } from "./agent";
 import { BackendUnavailableError, type Backend } from "./backend";
 import type { AgentConfig } from "./config";
@@ -10,6 +10,7 @@ import { parseChatRequest, ValidationError } from "./validate";
  * 사용자 에이전트 HTTP 서버.
  *   GET  /health → { ok, ai }
  *   POST /chat   → { reply, actions }
+ *   POST /chat/stream → 같은 답을 글자가 나오는 대로 한 줄씩 (AgentStreamEvent, docs/decisions/0020)
  * 로그인 없이 쓸 수 있는 사용자 화면용이라, IP마다 1분 요청 수를 제한해 AI 비용이 새지 않게 한다.
  */
 
@@ -111,7 +112,7 @@ export function createAgentServer({ config, model, backend, quiet }: AgentServer
         send(res, 200, { ok: true, ai: model !== null } satisfies AgentHealth);
         return;
       }
-      if (req.method === "POST" && path === "/chat") {
+      if (req.method === "POST" && (path === "/chat" || path === "/chat/stream")) {
         // 공개 링크(Cloudflare)를 거치면 모두 같은 주소에서 오므로, Cloudflare가 알려 주는 실제 접속 주소로 센다
         const ip = typeof req.headers["cf-connecting-ip"] === "string" ? req.headers["cf-connecting-ip"] : (req.socket.remoteAddress ?? "?");
         if (!allow(ip)) {
@@ -119,7 +120,32 @@ export function createAgentServer({ config, model, backend, quiet }: AgentServer
         }
         const request = parseChatRequest(await readJson(req));
         if (!model) throw new HttpError(503, "AI_DISABLED", "AI가 꺼져 있습니다 (ANTHROPIC_API_KEY 없음).");
-        send(res, 200, await runUserAgent(request, { model, backend, singleCall: config.singleCall }));
+        const deps = { model, backend, singleCall: config.singleCall };
+        if (path === "/chat") {
+          send(res, 200, await runUserAgent(request, deps));
+          return;
+        }
+        // 글자가 나오는 대로 한 줄씩 보낸다 (shared-types AgentStreamEvent).
+        // 사이의 프록시(nginx, Next)가 모아 두었다가 한꺼번에 보내지 않게 한다: no-transform은 압축을, X-Accel-Buffering은 nginx의 버퍼를 끈다.
+        res.writeHead(200, {
+          "Content-Type": "application/x-ndjson; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          "X-Accel-Buffering": "no",
+        });
+        const write = (event: AgentStreamEvent) => res.write(`${JSON.stringify(event)}\n`);
+        try {
+          const response = await runUserAgent(request, deps, {
+            onText: (delta) => write({ type: "text", delta }),
+            onReset: () => write({ type: "reset" }),
+            onActions: (actions) => write({ type: "actions", actions }),
+          });
+          write({ type: "done", response });
+        } catch (e) {
+          const error = toHttpError(e);
+          if (error.status >= 500 && !quiet) console.error("[user-agent]", e);
+          write({ type: "error", code: error.code, message: error.message });
+        }
+        res.end();
         return;
       }
       throw new HttpError(404, "NOT_FOUND", "없는 주소입니다.");
