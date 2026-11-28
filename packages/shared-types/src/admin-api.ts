@@ -16,7 +16,8 @@ import type { ContentAction } from "./workflow";
  *   PUT    /admin/contents/:id/video             ReplaceContentVideoInput → ExerciseContent  (구간은 유지)
  *   POST   /admin/contents/:id/reanalyze         ReanalyzeContentInput → ContentJob          (완료 시 구간 교체)
  *   POST   /admin/contents/:id/actions           ChangeContentStatusInput → ExerciseContent
- *          (APPROVE는 selfApprovalBlockedReason으로 자기 승인을 403 거절, SUBMIT_FOR_REVIEW 때 submittedBy 기록)
+ *          (APPROVE와 PUBLISH_NOW는 selfApprovalBlockedReason으로 자기 승인을 403 거절. 최고 관리자만 예외.
+ *           PUBLISH_NOW는 검사 규칙의 오류가 있으면 400. SUBMIT_FOR_REVIEW 때 submittedBy 기록)
  *   POST   /admin/contents/:id/tts               RequestTtsInput → ExerciseContent
  *   GET    /admin/content-jobs                   → ContentJob[]
  *   POST   /admin/content-jobs                   CreateContentJobInput → ContentJob  (큐에 넣음)

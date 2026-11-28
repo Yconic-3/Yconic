@@ -8,6 +8,7 @@ import {
   canPerformAction,
   hasPermission,
   selfApprovalBlockedReason,
+  validateExerciseContent,
   type AdminPermission,
   type AdminUser,
   type AuditLog,
@@ -278,13 +279,21 @@ export class AdminService {
       if (!canPerformAction(user.role, row.status, action)) {
         throw new ApiError("FORBIDDEN", `${CONTENT_STATUS_LABELS[row.status]} 상태에서 "${t.label}"을(를) 할 수 없거나 권한이 없습니다.`);
       }
-      if (action === "SUBMIT_FOR_REVIEW" && (await this.activeReanalysis(tx, id))) {
-        throw new ApiError("CONFLICT", "다시 분석이 진행 중입니다. 끝난 뒤 검수를 요청해 주세요.");
+      if ((action === "SUBMIT_FOR_REVIEW" || action === "PUBLISH_NOW") && (await this.activeReanalysis(tx, id))) {
+        throw new ApiError("CONFLICT", action === "PUBLISH_NOW" ? "다시 분석이 진행 중입니다. 끝난 뒤 공개해 주세요." : "다시 분석이 진행 중입니다. 끝난 뒤 검수를 요청해 주세요.");
       }
-      const selfApproval = selfApprovalBlockedReason(user.id, action, row);
+      // 최고 관리자만 자기가 만든 것도 승인·바로 공개할 수 있다 (docs/decisions/0023)
+      const selfApproval = selfApprovalBlockedReason(user.id, action, row, user.role);
       if (selfApproval) throw new ApiError("FORBIDDEN", selfApproval);
       const note = comment?.trim() ?? "";
       if (action === "REQUEST_CHANGES" && !note) throw new ApiError("VALIDATION", "수정 요청에는 검수 의견을 적어야 합니다.");
+      if (action === "PUBLISH_NOW") {
+        // 검수 요청을 건너뛰므로, 화면이 검수 요청 전에 하던 검사를 여기서 한다
+        const errors = validateExerciseContent(await this.findContent(tx, id)).filter((i) => i.severity === "ERROR");
+        if (errors.length > 0) {
+          throw new ApiError("VALIDATION", `고쳐야 할 것이 ${errors.length}개 있어 공개할 수 없습니다. ${errors[0]!.message}`);
+        }
+      }
 
       const now = new Date();
       await tx
@@ -296,8 +305,8 @@ export class AdminService {
           version: row.version + 1,
           ...(action === "SUBMIT_FOR_REVIEW" ? { submittedBy: user.id } : {}),
           ...(action === "REQUEST_CHANGES" ? { reviewComment: note } : {}),
-          ...(action === "PUBLISH" ? { publishedAt: now } : {}),
-          ...(action === "UNPUBLISH" ? { publishedAt: null } : {}),
+          ...(action === "PUBLISH" || action === "PUBLISH_NOW" ? { publishedAt: now } : {}),
+          ...(action === "UNPUBLISH" || action === "REVISE" ? { publishedAt: null } : {}),
         })
         .where(eq(contents.id, id));
       await writeAudit(
@@ -306,7 +315,7 @@ export class AdminService {
         "CONTENT_STATUS_CHANGED",
         "CONTENT",
         id,
-        `${CONTENT_STATUS_LABELS[row.status]} → ${CONTENT_STATUS_LABELS[t.to]}${note ? ` (의견: ${note})` : ""}`,
+        `${CONTENT_STATUS_LABELS[row.status]} → ${CONTENT_STATUS_LABELS[t.to]}${action === "PUBLISH_NOW" ? " (승인과 공개를 한 번에)" : ""}${action === "REVISE" ? " (다시 고치기)" : ""}${note ? ` (의견: ${note})` : ""}`,
       );
       return this.findContent(tx, id);
     });

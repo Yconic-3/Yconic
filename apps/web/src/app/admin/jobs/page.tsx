@@ -32,12 +32,12 @@ export default function JobsPage() {
   return (
     <>
       <PageHeader
-        title="AI 제작 작업"
-        description="운동 영상을 올리면 AI가 영상을 분석해 동작 구간을 나누고 구간별 음성 안내를 만듭니다. 완료되면 검수할 초안이 생깁니다."
-        actions={canCreate && <LinkButton href="/admin/jobs/new" variant="primary">새 AI 제작 요청</LinkButton>}
+        title="분석 내역"
+        description="올린 영상을 AI가 분석한 내역입니다. 분석이 끝난 영상은 콘텐츠 목록에 비공개로 나옵니다."
+        actions={<LinkButton href="/admin/contents">← 콘텐츠</LinkButton>}
       />
       {(jobs.error || error) && <Alert kind="error">{jobs.error ?? error}</Alert>}
-      {jobs.data && jobs.data.length === 0 && <EmptyState>아직 제작 작업이 없습니다.</EmptyState>}
+      {jobs.data && jobs.data.length === 0 && <EmptyState>아직 분석한 영상이 없습니다.</EmptyState>}
       <ul className="space-y-3">
         {(jobs.data ?? []).map((j) => (
           <li key={j.id} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -67,16 +67,16 @@ export default function JobsPage() {
             )}
             {j.status === "COMPLETED" && j.contentId && (
               <p className="mt-3 text-sm">
-                {j.kind === "REANALYZE" ? "새 분석 결과로 구간을 바꿨습니다." : "초안이 만들어졌습니다."}{" "}
+                {j.kind === "REANALYZE" ? "새 분석 결과로 구간을 바꿨습니다." : "분석이 끝났습니다."}{" "}
                 <Link href={`/admin/contents/${j.contentId}`} className="font-medium text-blue-700 hover:underline">
-                  {j.kind === "REANALYZE" ? "콘텐츠 확인하기 →" : "초안 검토하기 →"}
+                  "열어서 확인하기 →"
                 </Link>
               </p>
             )}
             {j.status !== "COMPLETED" && j.kind === "REANALYZE" && j.contentId && (
               <p className="mt-2 text-sm">
                 <Link href={`/admin/contents/${j.contentId}`} className="text-blue-700 hover:underline">
-                  대상 콘텐츠 열기 →
+                  콘텐츠 열기 →
                 </Link>
               </p>
             )}

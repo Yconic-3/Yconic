@@ -3,6 +3,9 @@ import {
   availableActions,
   canEditContent,
   canPerformAction,
+  CONTENT_TRANSITIONS,
+  visibilityOf,
+  publishActionFor,
   estimateSpeechSec,
   findVisualOnlyPhrases,
   hasBlockingIssues,
@@ -60,7 +63,31 @@ describe("상태 전이", () => {
     expect(canPerformAction("EDITOR", "IN_REVIEW", "APPROVE")).toBe(false);
   });
   it("승인권자는 검수 중 콘텐츠를 승인하거나 수정 요청할 수 있다", () => {
-    expect(availableActions("APPROVER", "IN_REVIEW")).toEqual(["REQUEST_CHANGES", "APPROVE"]);
+    expect(availableActions("APPROVER", "IN_REVIEW")).toEqual(["REQUEST_CHANGES", "APPROVE", "PUBLISH_NOW"]);
+  });
+  it("승인 권한이 있으면 초안을 바로 공개할 수 있고, 편집자는 못 한다 (0023)", () => {
+    expect(canPerformAction("APPROVER", "DRAFT", "PUBLISH_NOW")).toBe(true);
+    expect(canPerformAction("SUPER_ADMIN", "CHANGES_REQUESTED", "PUBLISH_NOW")).toBe(true);
+    expect(canPerformAction("EDITOR", "DRAFT", "PUBLISH_NOW")).toBe(false);
+    expect(canPerformAction("APPROVER", "APPROVED", "PUBLISH_NOW")).toBe(false);
+    expect(publishActionFor("DRAFT")).toBe("PUBLISH_NOW");
+    expect(publishActionFor("IN_REVIEW")).toBe("PUBLISH_NOW");
+    expect(publishActionFor("APPROVED")).toBe("PUBLISH");
+    expect(publishActionFor("PUBLISHED")).toBeNull();
+    expect(publishActionFor("ARCHIVED")).toBeNull();
+  });
+  it("승인됐거나 공개 중인 것은 초안으로 돌려 다시 고칠 수 있다", () => {
+    expect(canPerformAction("APPROVER", "PUBLISHED", "REVISE")).toBe(true);
+    expect(canPerformAction("APPROVER", "APPROVED", "REVISE")).toBe(true);
+    expect(canPerformAction("EDITOR", "PUBLISHED", "REVISE")).toBe(false);
+    expect(canPerformAction("APPROVER", "DRAFT", "REVISE")).toBe(false);
+    expect(CONTENT_TRANSITIONS.REVISE.to).toBe("DRAFT");
+  });
+  it("관리자 화면은 여섯 상태를 공개·비공개·공개 요청·보관으로 묶어 보여 준다", () => {
+    expect(visibilityOf("PUBLISHED")).toBe("PUBLIC");
+    expect(visibilityOf("IN_REVIEW")).toBe("REQUESTED");
+    expect(visibilityOf("ARCHIVED")).toBe("ARCHIVED");
+    for (const s of ["DRAFT", "CHANGES_REQUESTED", "APPROVED"] as const) expect(visibilityOf(s)).toBe("PRIVATE");
   });
   it("검수 중에 바로 공개할 수 없다", () => {
     expect(canPerformAction("SUPER_ADMIN", "IN_REVIEW", "PUBLISH")).toBe(false);
@@ -79,6 +106,15 @@ describe("상태 전이", () => {
     expect(selfApprovalBlockedReason("u-a", "REQUEST_CHANGES", content)).toBeNull();
     expect(selfApprovalBlockedReason("u-a", "PUBLISH", content)).toBeNull();
     expect(selfApprovalBlockedReason("u-a", "APPROVE", { createdBy: "u-x", submittedBy: null })).toBeNull();
+  });
+  it("바로 공개도 승인을 포함하므로 만든 사람은 못 한다. 최고 관리자만 예외다 (0023)", () => {
+    const content = { createdBy: "u-a", submittedBy: "u-b" };
+    expect(selfApprovalBlockedReason("u-a", "PUBLISH_NOW", content)).toBe(SELF_APPROVAL_MESSAGE);
+    expect(selfApprovalBlockedReason("u-b", "PUBLISH_NOW", content, "APPROVER")).toBe(SELF_APPROVAL_MESSAGE);
+    expect(selfApprovalBlockedReason("u-c", "PUBLISH_NOW", content, "APPROVER")).toBeNull();
+    expect(selfApprovalBlockedReason("u-a", "PUBLISH_NOW", content, "SUPER_ADMIN")).toBeNull();
+    expect(selfApprovalBlockedReason("u-a", "APPROVE", content, "SUPER_ADMIN")).toBeNull();
+    expect(selfApprovalBlockedReason("u-a", "APPROVE", content, "APPROVER")).toBe(SELF_APPROVAL_MESSAGE);
   });
   it("공개 중인 콘텐츠만 사용자에게 보인다", () => {
     expect(isVisibleToUsers({ status: "PUBLISHED" })).toBe(true);

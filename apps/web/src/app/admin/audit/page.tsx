@@ -12,11 +12,11 @@ export default function AuditPage() {
   const allowed = hasPermission(user.role, "audit:read");
   const logs = useAsync(() => (allowed ? api.listAuditLogs() : Promise.resolve([])), [api, allowed]);
 
-  if (!allowed) return <Alert kind="error">감사 로그를 볼 권한이 없습니다.</Alert>;
+  if (!allowed) return <Alert kind="error">기록을 볼 권한이 없습니다.</Alert>;
 
   return (
     <>
-      <PageHeader title="감사 로그" description="누가 언제 무엇을 만들고, 고치고, 승인하고, 공개했는지 기록입니다." />
+      <PageHeader title="기록" description="누가 언제 무엇을 올리고, 고치고, 공개했는지 남은 기록입니다." />
       {logs.error && <Alert kind="error">{logs.error}</Alert>}
       {logs.data && logs.data.length === 0 && <EmptyState>기록이 없습니다.</EmptyState>}
       {logs.data && logs.data.length > 0 && (
