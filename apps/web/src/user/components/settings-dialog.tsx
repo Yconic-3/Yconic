@@ -8,6 +8,7 @@ import { Icon, ICONS } from "./ui";
  * 머리말의 톱니 버튼이나 "설정"이라는 말로 연다. 화면 위에 겹쳐 뜨고, Esc·닫기 버튼으로 닫는다.
  * - 음성: 음성 안내 켜기·끄기, 읽기 속도, 부르면 듣기("소리벗")
  * - 화면: 글자 크기
+ * - 도움말: 처음에 나온 사용법 다시 보기 (docs/decisions/0013)
  * - 계정: 로그인 전에는 로그인, 로그인 후에는 내 강의 설정·내 계정·로그아웃
  */
 
@@ -53,6 +54,8 @@ export interface SettingsDialogProps {
   onAccount(): void;
   onAdmin(): void;
   onLogout(): void;
+  /** 사용법 안내를 다시 연다 */
+  onGuide(): void;
 }
 
 export function SettingsDialog(p: SettingsDialogProps) {
@@ -159,6 +162,12 @@ export function SettingsDialog(p: SettingsDialogProps) {
                 </Option>
               ))}
             </Choice>
+          </Group>
+
+          <hr className="m-0 border-0 border-t-2 border-line" />
+
+          <Group title="도움말">
+            <Row icon={ICONS.help} title="사용법 다시 보기" sub="처음에 나온 안내를 다시 보고 듣습니다" onClick={p.onGuide} />
           </Group>
 
           <hr className="m-0 border-0 border-t-2 border-line" />

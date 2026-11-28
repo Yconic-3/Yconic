@@ -63,6 +63,11 @@ describe("handleLocally", () => {
     expect(local("운동하다가 갑자기 무릎이 너무 아파요", false)).toBe(true);
   });
 
+  it("사용법을 묻는 말은 화면이 바로 안내 창을 연다", () => {
+    expect(local("사용법 알려줘", false)).toBe(true);
+    expect(local("도움말", false)).toBe(true);
+  });
+
   it("운동 화면의 짧은 조작은 바로, 질문이나 긴 말은 에이전트로", () => {
     expect(local("다음")).toBe(true);
     expect(local("멈춰")).toBe(true);
