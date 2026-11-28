@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Put, Query, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import type { AdminUser, AuditLog, ContentJob, ExerciseContent, PlaybackUrlResponse, UploadProgress, UploadSession, VideoAsset } from "@yconic/shared-types";
+import type { AdminUser, AuditLog, ContentJob, ExerciseContent, PlaybackUrlResponse, UploadProgress, UploadSession, UploadStatus, VideoAsset } from "@yconic/shared-types";
 import { AdminGuard, AuthGuard, CurrentAdmin } from "../auth/guards";
 import { AdminService, type UploadedVideoFile } from "./admin.service";
 import {
@@ -41,6 +41,11 @@ export class AdminController {
   @Post("uploads")
   startUpload(@CurrentAdmin() user: AdminUser, @Body() body: unknown): Promise<UploadSession> {
     return this.admin.startUpload(user, parseCreateUpload(body));
+  }
+
+  @Get("uploads/:id")
+  uploadStatus(@CurrentAdmin() user: AdminUser, @Param("id") id: string): Promise<UploadStatus> {
+    return this.admin.uploadStatus(user, id);
   }
 
   @Put("uploads/:id/chunks/:index")

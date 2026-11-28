@@ -18,6 +18,7 @@ import {
   type CreateUploadInput,
   type UploadProgress,
   type UploadSession,
+  type UploadStatus,
   type VideoAsset,
 } from "@yconic/shared-types";
 import { and, desc, eq, ilike, inArray, notInArray, or, sql, type SQL } from "drizzle-orm";
@@ -27,7 +28,7 @@ import { ApiError, notFound } from "../common/errors";
 import { newId } from "../common/ids";
 import { videosDir, type ApiConfig } from "../config";
 import { insertCreateJob, saveUploadedVideo, type UploadedVideoFile } from "../content/content.ops";
-import { appendChunk, cancelUpload, completeUpload, createUpload } from "../content/upload.ops";
+import { appendChunk, cancelUpload, completeUpload, createUpload, uploadStatus } from "../content/upload.ops";
 import { loadContents, loadJobs, videoUrl, writeAudit, type Db } from "../content/content.store";
 import { CONFIG, DB } from "../tokens";
 import type { SegmentInput, UpdateContentBody } from "./validate";
@@ -93,7 +94,11 @@ export class AdminService {
   // 나눠 올리기 (서버 앞 프록시가 큰 요청을 막아도 올릴 수 있게)
 
   startUpload(user: AdminUser, input: CreateUploadInput): Promise<UploadSession> {
-    return createUpload(this.config, user.id, input, () => requirePermission(user, "job:create"));
+    return createUpload(this.config, user.id, input, "admin", () => requirePermission(user, "job:create"));
+  }
+
+  uploadStatus(user: AdminUser, uploadId: string): Promise<UploadStatus> {
+    return uploadStatus(this.config, user.id, uploadId, "admin");
   }
 
   uploadChunk(user: AdminUser, uploadId: string, index: number, chunk: unknown): Promise<UploadProgress> {

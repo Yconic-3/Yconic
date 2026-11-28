@@ -80,6 +80,8 @@ sudo systemctl restart yconic-db yconic-api yconic-agent yconic-web
 
 - `apps/api/.env`
   - `WEB_ORIGIN`: Vercel 주소와 서버 주소 (쉼표로)
+  - `UPLOAD_PUBLIC_URL`: `https://k7m4q9vz.cloud.aimple.io/api`. 화면이 영상 조각을 Vercel을 거치지 않고 서버로 직접 보낸다 (결정 0022)
+  - `API_PUBLIC_URL`: 같은 주소. 영상 재생과 음성 파일도 서버로 직접 간다
   - `ANTHROPIC_API_KEY`: 있으면 실제 영상 분석과 AI 맞춤 안내를 쓴다
   - `PYTHON`: `~/yconic-venv/bin/python`의 전체 경로
   - `AI_DAILY_LIMIT_ANALYSIS=5`, `AI_DAILY_LIMIT_GUIDES=100`
@@ -148,7 +150,8 @@ sudo systemctl restart yconic-db yconic-api yconic-agent yconic-web
 
 ## 알려진 제한
 
-- **업체 프록시(nginx)가 약 1MB보다 큰 요청을 막는다** (413). 그래서 영상은 768KB 조각으로 나눠 올린다 (`docs/decisions/0015-영상-나눠-올리기.md`). 조각 크기는 `apps/api/.env`의 `UPLOAD_CHUNK_BYTES`로 바꿀 수 있지만 1MB보다 작아야 한다.
+- **업체 프록시(nginx)가 1MiB(1,048,576바이트)보다 큰 요청을 막는다** (413). 그래서 영상은 1,000,000바이트 조각으로 나눠, 4개씩 동시에 서버로 직접 올린다 (`docs/decisions/0015-영상-나눠-올리기.md`, `0022-큰-영상-빠르게-올리기.md`). 조각 크기는 `apps/api/.env`의 `UPLOAD_CHUNK_BYTES`로 바꿀 수 있지만 1MiB보다 작아야 한다.
+- Vercel 무료 요금제는 서버로 넘기는 전송량이 한 달 10GB다. 영상 올리기와 재생은 서버로 직접 가게 해 두었으므로 이 한도를 쓰지 않는다. `UPLOAD_PUBLIC_URL`이나 `API_PUBLIC_URL`을 지우면 다시 Vercel을 거친다.
 - 그래픽카드가 없어서 받아쓰기는 CPU로 돈다. 영상 길이와 비슷한 시간이 걸린다. 5분 37초짜리 영상(23MB, 1080p)을 분석하는 데 5분 29초가 걸렸다 (장면 뽑기 36초, 받아쓰기 약 4분, AI 약 1분. 2026-11-28에 잼).
 - 올린 영상의 재생은 서버 주소와 Vercel 주소 모두에서 된다 (구간 요청 포함).
 - 서버가 꺼지면 Vercel 주소도 운동 목록을 불러오지 못한다.
