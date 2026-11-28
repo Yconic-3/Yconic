@@ -34,7 +34,7 @@
 - 전체 테스트: `pnpm test` / 타입 검사: `pnpm typecheck`
 - **전부 한 번에 켜기: `pnpm dev`** (DB·API·AI 에이전트·웹앱). Windows에서는 저장소 맨 위의 `실행하기.cmd`를 더블클릭해도 된다. DB를 켤 때 마이그레이션은 자동으로 반영되고, 처음 만든 DB에는 예시 데이터가 들어간다
 - **다른 사람에게 보여 주기: `pnpm share`** (또는 `공유하기.cmd`). `pnpm dev`를 켜 둔 채로 실행하면 임시 https 공개 링크를 알려 준다. 공개 링크에서는 관리자 로그인이 막히고(시연용으로 열려면 `PUBLIC_LINK_ADMIN_LOGIN=allow` + `pnpm share:admin`) AI는 하루 한도 안에서만 쓴다 (`docs/decisions/0010-임시-공개-링크.md`)
-- **고정 공개 URL(Vercel)**: `apps/web`을 예시 데이터 + 웹앱 안 AI 대화로 올린다. 설정 방법은 `docs/deploy-vercel.md`
+- **고정 공개 URL(Vercel) + 클라우드 서버**: 사용자는 Vercel 주소로 들어오고, Vercel이 `/api`·`/agent`를 클라우드 서버(DB·API·AI 에이전트)로 대신 연결한다. `main`에 병합하면 Vercel만 자동으로 배포되고, **서버는 접속해서 직접 업데이트한다**. 서버에서 `pnpm db:seed`는 실행하지 않는다 (데이터가 지워지고 관리자 비밀번호가 공개된 값으로 돌아간다). 설정 방법은 `docs/deploy-vercel.md`, `docs/deploy-cloud.md` (`docs/decisions/0014-클라우드-서버와-Vercel-연결.md`)
 - PowerShell이 `pnpm`을 보안 오류로 막으면 `pnpm.cmd dev`처럼 `.cmd`를 붙여 실행한다
 - 데이터베이스: `pnpm db:start`(켜기, 창을 열어 둔다) → 처음 한 번 `pnpm db:setup`(테이블+예시 데이터). 예시 데이터로 되돌리기 `pnpm db:seed`
 - API 실행: `pnpm dev:api` → http://localhost:4000/health
