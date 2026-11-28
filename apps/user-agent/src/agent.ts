@@ -9,7 +9,7 @@ import {
 import type { AgentAction, AgentChatRequest, AgentChatResponse } from "@yconic/shared-types";
 import type { Backend } from "./backend";
 import { appStateText, USER_AGENT_SYSTEM_PROMPT } from "./prompt";
-import { runTool, USER_AGENT_TOOLS } from "./tools";
+import { runTool, sayOf, SCREEN_TOOLS, USER_AGENT_TOOLS } from "./tools";
 
 /** 한 번의 말에 Claude를 부르는 최대 횟수 (도구 → 답) */
 const MAX_STEPS = 5;
@@ -25,6 +25,11 @@ export const GAVE_UP_REPLY = "요청을 끝까지 처리하지 못했어요. 조
 export interface UserAgentDeps {
   model: AiModel;
   backend: Backend;
+  /**
+   * 화면 도구만 부른 차례에서 도구에 함께 온 말(say)을 답으로 삼고 Claude를 다시 부르지 않을지 (기본: 그렇게 한다).
+   * false면 예전처럼 도구 결과를 돌려주고 한 번 더 불러 답을 받는다 (비교하거나 되돌릴 때).
+   */
+  singleCall?: boolean;
 }
 
 /** 앞선 대화를 Claude 메시지로 바꾼다. 첫 메시지는 사용자 말이어야 해서 앞쪽의 비서 말은 뺀다 */
@@ -44,9 +49,22 @@ function safeActions(actions: AgentAction[]): AgentAction[] {
   return actions.filter((a) => a.type !== "OPEN_EXERCISE" && !(a.type === "PLAYBACK" && a.command !== "STOP"));
 }
 
+/** 여러 화면 도구가 함께 왔을 때 읽을 말: 멈춤(STOP)의 말이 먼저, 아니면 마지막 도구의 말 */
+function replyFromScreenTools(uses: { name: string; input: unknown }[]): string {
+  const stop = uses.find((u) => u.name === "control_playback" && (u.input as { command?: unknown } | null)?.command === "STOP");
+  if (stop && sayOf(stop.input)) return sayOf(stop.input);
+  for (let i = uses.length - 1; i >= 0; i--) {
+    const say = sayOf(uses[i]!.input);
+    if (say) return say;
+  }
+  return "";
+}
+
 /**
  * 사용자의 말 한 마디를 처리한다.
  * Claude가 도구를 부르면 실행해 결과를 돌려주고, 도구를 더 부르지 않을 때의 말을 답으로 삼는다.
+ * 화면 도구(열기·재생·속도·이동)만 부른 차례는 거기서 끝낸다: 도구에 함께 온 말이 답이다.
+ * 결과를 보고 다시 생각할 것이 없는데 한 번 더 부르면 그만큼 사람이 기다린다 (docs/decisions/0019).
  */
 export async function runUserAgent(request: AgentChatRequest, deps: UserAgentDeps): Promise<AgentChatResponse> {
   const exercises = await deps.backend.listExercises();
@@ -88,9 +106,17 @@ export async function runUserAgent(request: AgentChatRequest, deps: UserAgentDep
 
     messages.push({ role: "assistant", content });
     const results: ClaudeToolResultBlockParam[] = [];
+    let failed = false;
     for (const use of toolUses) {
       const outcome = await runTool(use.name, use.input, { backend: deps.backend, context: request.context, actions });
+      if (outcome.isError) failed = true;
       results.push({ type: "tool_result", tool_use_id: use.id, content: outcome.content, is_error: outcome.isError });
+    }
+    // 화면 도구만 불렀고 모두 됐으면, 함께 온 말을 답으로 삼고 끝낸다.
+    // 정보 도구가 섞였거나(결과를 보고 답해야 한다) 실패했으면(다르게 말해야 한다) 한 번 더 부른다.
+    if (deps.singleCall !== false && !failed && toolUses.every((u) => SCREEN_TOOLS.has(u.name))) {
+      const say = replyFromScreenTools(toolUses);
+      if (say) return { reply: clip(say), actions: safeActions(actions) };
     }
     messages.push({ role: "user", content: results });
   }

@@ -42,6 +42,7 @@ import { GuideDialog } from "./guide-dialog";
 import { EXERCISE_TIP, GUIDE_SPEECH_BODY, GUIDE_SPEECH_END, isGuideSkip, markIntroSeen, markTipSeen, readGuideSeen } from "@/user/lib/guide";
 import { afterWakeWord, ARM_MS, createCommandGate, WAKE_WORD } from "@/user/lib/wake-word";
 import { classifyAnswer } from "@/user/lib/confirm";
+import { BACKCHANNEL_DELAY_MS, BACKCHANNEL_MAX_MS, endOfSpeechWaitMs, isBackchannelEcho, pickBackchannel } from "@/user/lib/turn-taking";
 import { readHistory, recommendNext, recordCompletion, timesDone } from "@/user/lib/history";
 import { ShellContext, type PageCommandHandler, type PageInfo, type ShellApi, type ShellMode } from "@/user/lib/shell";
 import {
@@ -444,6 +445,11 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
   askStepsRef.current = askSteps;
   /** 운동 중 말 걸기: 사람이 말하는 동안(중간 결과가 들어오는 동안) 영상 소리를 끄기 위한 시각 */
   const userTalkingUntilRef = useRef(0);
+  // 방금 한 맞장구 ("잠시만요."). 이 말이 마이크로 다시 들어오면 사람의 말로 보지 않는다 (0019)
+  const backchannelRef = useRef<{ text: string; until: number } | null>(null);
+  // 말 끝을 기다리는 시간을 정할 때 본다: 운동 화면이 열려 있는지
+  const exerciseOpenRef = useRef(false);
+  exerciseOpenRef.current = exercise !== null;
 
   const exerciseLevel = exercise ? levelOf(exercise) : "detailed";
   const profileRef = useRef(learning);
@@ -1201,15 +1207,30 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       const currentSeg = exercise?.segments[s.segmentIndex];
       // 답이 오든, 실패하든, 끝내 오지 않든 한 번만 마무리한다. '답을 생각하고 있어요'에서 멈추지 않게 한다
       let settled = false;
+      // 맞장구 (0019): 말로 물었는데 답이 조금 늦어지면 "잠시만요."처럼 짧게 말해 조용히 기다리게 하지 않는다.
+      // 답은 맞장구를 다 읽은 뒤에 읽는다 (두 말이 겹치거나 맞장구가 잘리지 않게).
+      let backchannelDone: Promise<unknown> | null = null;
+      const backchannelTimer = window.setTimeout(() => {
+        if (settled || seq !== commandSeqRef.current) return;
+        // 글로 물었거나, 음성 안내를 껐거나, 사람이 아직 말하는 중이거나, 앱이 무언가 읽는 중이면 하지 않는다
+        if (quietRepliesRef.current || !speechEnabledRef.current) return;
+        if (Date.now() < userTalkingUntilRef.current || getSpeechState().speaking) return;
+        const phrase = pickBackchannel(text);
+        backchannelRef.current = { text: phrase, until: Date.now() + 3500 };
+        backchannelDone = Promise.race([speak(phrase, { rate: rateRef.current }), new Promise((r) => window.setTimeout(r, BACKCHANNEL_MAX_MS))]);
+      }, BACKCHANNEL_DELAY_MS);
       const finish = (response: AgentChatResponse | null) => {
         if (settled) return;
         settled = true;
         window.clearTimeout(giveUp);
-        if (seq !== commandSeqRef.current) return;
-        setThinking(false);
-        // 에이전트를 못 쓰면 규칙 기반 해석으로 처리한다
-        if (response) void runAgentResponse(response, seq);
-        else runIntentAsking(intent, text);
+        window.clearTimeout(backchannelTimer);
+        void (backchannelDone ?? Promise.resolve()).then(() => {
+          if (seq !== commandSeqRef.current) return;
+          setThinking(false);
+          // 에이전트를 못 쓰면 규칙 기반 해석으로 처리한다
+          if (response) void runAgentResponse(response, seq);
+          else runIntentAsking(intent, text);
+        });
       };
       const giveUp = window.setTimeout(() => finish(null), THINKING_MAX_MS);
       void agent
@@ -1322,6 +1343,9 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       quietRepliesRef.current = false;
       // 앱이 방금 읽은 말이 스피커에서 다시 들어온 것이면 사람이 한 말이 아니다
       if (spokenEcho.isEcho(text)) return;
+      // 방금 한 맞장구의 일부만 들린 것도 마찬가지다 (짧아서 위의 비교를 빠져나갈 수 있다)
+      const backchannel = backchannelRef.current;
+      if (backchannel && Date.now() < backchannel.until && isBackchannelEcho(text, backchannel.text)) return;
       // 운동 중(음성 안내 켬)에는 호출어 없이 바로 대화한다
       if (openMicRef.current) {
         const rest = afterWakeWord(text);
@@ -1363,6 +1387,8 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     if (listenerRef.current) return true;
     const listener = startListening({
       onText: (text) => heardRef.current(text),
+      // 더 이을 말이 없는 짧은 말("다음", 묻는 말에 "네")은 덜, 덜 끝난 것 같은 말은 더 기다린다 (0019)
+      endOfSpeechMs: (heardSoFar) => endOfSpeechWaitMs(heardSoFar, { awaitingAnswer: pendingConfirmRef.current !== null, onExercise: exerciseOpenRef.current }),
       // 사람이 말하기 시작하면(앱의 메아리가 아니면) 앱이 읽던 말을 멈추고 듣는다. 듣는 동안 영상 소리도 끈다
       onSpeaking: (partial) => {
         if (spokenEcho.isEcho(partial) || partial.replace(/\s/g, "").length < 2) return;

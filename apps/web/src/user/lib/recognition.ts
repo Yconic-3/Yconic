@@ -56,10 +56,16 @@ export type ListenError = "unsupported" | "denied" | "failed";
 export const END_OF_SPEECH_MS = 1300;
 
 /**
+ * 말이 끝났다고 보는 쉼. 숫자로 정하거나, 지금까지 들은 말을 보고 정한다
+ * (더 이을 말이 없는 짧은 말은 덜, 덜 끝난 것 같은 말은 더 기다린다: turn-taking.ts, docs/decisions/0019).
+ */
+export type EndOfSpeech = number | ((heardSoFar: string) => number);
+
+/**
  * 모아 둔 말을 언제 넘길지 정한다 (브라우저와 떼어 테스트할 수 있게).
  * push: 끝난 말 조각, touch: 아직 말하는 중(중간 결과). flush 시각이 되면 모은 말을 돌려준다.
  */
-export function createUtteranceBuffer(endOfSpeechMs = END_OF_SPEECH_MS) {
+export function createUtteranceBuffer(endOfSpeechMs: EndOfSpeech = END_OF_SPEECH_MS) {
   let parts: string[] = [];
   let lastAt = 0;
   return {
@@ -73,8 +79,10 @@ export function createUtteranceBuffer(endOfSpeechMs = END_OF_SPEECH_MS) {
     },
     /** 말이 끝났으면 모은 말을 돌려주고 비운다. 아직이면 null */
     take(now: number): string | null {
-      if (parts.length === 0 || now - lastAt < endOfSpeechMs) return null;
+      if (parts.length === 0) return null;
       const text = parts.join(" ").replace(/\s+/g, " ").trim();
+      const wait = typeof endOfSpeechMs === "function" ? endOfSpeechMs(text) : endOfSpeechMs;
+      if (now - lastAt < wait) return null;
       parts = [];
       return text || null;
     },
@@ -92,7 +100,7 @@ export function startListening(handlers: {
   onText(text: string): void;
   onError(error: ListenError): void;
   onSpeaking?(partial: string): void;
-  endOfSpeechMs?: number;
+  endOfSpeechMs?: EndOfSpeech;
 }): Listener | null {
   const Ctor = getConstructor();
   if (!Ctor) {
