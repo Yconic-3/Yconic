@@ -27,6 +27,14 @@ export interface ApiConfig {
   signupPerDay: number;
   /** 로그인 화면에 체험 계정을 보여 줄지. 공개 서버에서는 끈다 (비밀번호가 공개되어 있다) */
   demoAccounts: boolean;
+  /** 서버 목소리 (docs/decisions/0021): Google Cloud Text-to-Speech API 키. 없으면 끈다 (화면은 기기의 목소리로 읽는다) */
+  googleTtsApiKey: string | null;
+  /** 음성 이름 (예: ko-KR-Chirp3-HD-Kore, ko-KR-Neural2-A) */
+  ttsVoice: string;
+  /** 한 번에 받는 글자 수, 한 곳(IP)의 1분 요청 수, 하루에 새로 만드는 글자 수 (이미 만든 글은 세지 않는다) */
+  ttsMaxChars: number;
+  ttsPerIpPerMinute: number;
+  ttsDailyChars: number;
   maxVideoBytes: number;
   /** 나눠 올릴 때 조각 하나의 크기. 서버 앞 프록시가 받는 크기(약 1MB)보다 작아야 한다 */
   uploadChunkBytes: number;
@@ -60,6 +68,11 @@ export function loadConfig(overrides: Partial<ApiConfig> = {}): ApiConfig {
     signupPerIpPerHour: Number(process.env.SIGNUP_PER_IP_PER_HOUR ?? 10),
     signupPerDay: Number(process.env.SIGNUP_PER_DAY ?? 300),
     demoAccounts: process.env.DEMO_ACCOUNTS !== "off",
+    googleTtsApiKey: process.env.GOOGLE_TTS_API_KEY?.trim() || null,
+    ttsVoice: process.env.TTS_VOICE?.trim() || "ko-KR-Chirp3-HD-Kore",
+    ttsMaxChars: Number(process.env.TTS_MAX_CHARS ?? 300),
+    ttsPerIpPerMinute: Number(process.env.TTS_PER_IP_PER_MINUTE ?? 60),
+    ttsDailyChars: Number(process.env.TTS_DAILY_CHARS ?? 30000),
     maxVideoBytes: 2 * 1024 * 1024 * 1024,
     uploadChunkBytes: Number(process.env.UPLOAD_CHUNK_BYTES ?? 768 * 1024),
     sessionDays: 30,
@@ -73,6 +86,11 @@ export function loadConfig(overrides: Partial<ApiConfig> = {}): ApiConfig {
 
 export function videosDir(config: ApiConfig): string {
   return join(config.storageDir, "videos");
+}
+
+/** 서버가 만든 음성 파일을 두는 폴더 (/media/tts/ 로 공개한다) */
+export function ttsDir(config: ApiConfig): string {
+  return join(config.storageDir, "tts");
 }
 
 /** 나눠 올리는 중인 조각을 모아 두는 폴더 (바깥에 공개하지 않는다) */

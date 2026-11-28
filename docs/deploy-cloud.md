@@ -30,6 +30,7 @@
 | Node 24, pnpm | `~/.local/node` |
 | DB 데이터 | `~/.yconic/pgdata-5433` |
 | 올린 영상 | `~/yconic/apps/api/storage/videos` |
+| 서버가 만든 음성 파일 | `~/yconic/apps/api/storage/tts` |
 | 받아쓰기 도구(faster-whisper) | `~/yconic-venv` |
 | 설정(API 키 포함) | `~/yconic/apps/api/.env`, `~/yconic/apps/user-agent/.env`, `~/yconic/apps/web/.env.production.local` |
 | 관리자 비밀번호 | `~/yconic-admin-passwords.txt` (본인만 읽을 수 있다) |
@@ -118,6 +119,22 @@ sudo systemctl restart yconic-db yconic-api yconic-agent yconic-web
    - `http://localhost:3000` (내 컴퓨터에서 볼 때)
 5. 만들어진 **클라이언트 ID**(`….apps.googleusercontent.com`)를 서버의 `apps/api/.env`에 `GOOGLE_CLIENT_ID=…`로 적고 `sudo systemctl restart yconic-api`를 한다. 클라이언트 보안 비밀번호는 쓰지 않는다.
 6. 로그인 화면을 새로 고치면 구글 버튼이 나온다. Vercel 환경 변수는 바꾸지 않아도 된다 (화면이 API에 물어본다).
+
+## 서버 목소리 켜기
+
+서버가 음성 파일을 만들어 주면 기기마다 다른 목소리 대신 같은 목소리로 읽는다 (`docs/decisions/0021-서버-목소리.md`).
+키를 만드는 일과 결제 정보 등록은 계정 주인이 직접 한다.
+
+1. https://console.cloud.google.com 에서 프로젝트를 고른다 (구글 로그인용으로 만든 프로젝트를 써도 된다).
+2. **API 및 서비스 → 라이브러리**에서 **Cloud Text-to-Speech API**를 찾아 **사용**을 누른다. 결제 계정을 연결하라고 하면 연결한다. 가격과 무료 한도는 이때 Google의 가격표에서 확인한다.
+3. **API 및 서비스 → 사용자 인증 정보 → 사용자 인증 정보 만들기 → API 키**를 누른다.
+4. 만든 키의 **API 제한사항**에서 **키 제한 → Cloud Text-to-Speech API**만 고른다. 이 키로 다른 API를 쓸 수 없게 한다.
+5. 서버의 `apps/api/.env`에 `GOOGLE_TTS_API_KEY=…`를 적고 `sudo systemctl restart yconic-api`를 한다. **키는 대화나 저장소에 붙여 넣지 않는다.**
+6. 화면을 새로 고치면 서버 목소리로 읽는다. Vercel 환경 변수는 바꾸지 않아도 된다 (화면이 API에 물어본다).
+
+- 목소리를 바꾸려면 `TTS_VOICE`를 고친다. 한국어 예: `ko-KR-Chirp3-HD-Kore`(여, 기본값), `ko-KR-Chirp3-HD-Charon`(남), `ko-KR-Neural2-A`(여), `ko-KR-Neural2-C`(남). 전체 목록은 Google 문서의 'Supported voices'에 있다.
+- 하루에 새로 만드는 글자 수는 `TTS_DAILY_CHARS`(기본 3만 자)로 정한다. 넘으면 그날은 기기의 목소리로 읽는다.
+- 만든 음성 파일은 `~/yconic/apps/api/storage/tts`에 있다. 지워도 된다 (다시 만든다).
 
 ## 관리자 계정
 

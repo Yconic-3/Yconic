@@ -15,3 +15,4 @@ export * from "./courses";
 export * from "./movements";
 export * from "./narration";
 export * from "./upload";
+export * from "./tts";

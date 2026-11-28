@@ -88,12 +88,15 @@ export function looksLikeQuestion(text: string): boolean {
   return QUESTION_ENDING.test(lastWord(t));
 }
 
+/** 맞장구로 쓰는 말 모두 (서버 목소리를 쓸 때 미리 받아 둔다) */
+export const BACKCHANNELS = ["확인해 볼게요.", "잠시만요."] as const;
+
 /**
  * 기다리게 할 때 하는 짧은 말. 묻는 말에는 "확인해 볼게요.", 시키는 말에는 "잠시만요."
  * "네"처럼 대답으로 들릴 수 있는 말은 쓰지 않는다: 이 말이 스피커에서 마이크로 다시 들어오면 사람의 대답으로 잘못 들을 수 있다.
  */
 export function pickBackchannel(text: string): string {
-  return looksLikeQuestion(text) ? "확인해 볼게요." : "잠시만요.";
+  return looksLikeQuestion(text) ? BACKCHANNELS[0] : BACKCHANNELS[1];
 }
 
 function squash(text: string): string {
