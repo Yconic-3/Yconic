@@ -27,6 +27,16 @@ export interface RunOptions {
   jsonSchema?: Record<string, unknown>;
   /** 오래 걸리는 요청(영상 분석)의 대기 시간 (밀리초) */
   timeoutMs?: number;
+  /**
+   * 답의 글자가 나오는 대로 받는다 (음성 대화에서 첫 문장부터 읽으려고, docs/decisions/0020).
+   * 이것을 주면 스트리밍으로 부르고, 끝나면 run은 평소처럼 완성된 메시지를 돌려준다.
+   */
+  onText?(delta: string): void;
+  /**
+   * 지금까지 onText로 준 글을 버려야 한다: 그 글 뒤에 도구 호출이 이어졌거나(답이 아니라 도구 앞의 말이었다),
+   * 대체 모델이 처음부터 다시 답하기 시작했다.
+   */
+  onRestart?(): void;
 }
 
 /** Claude를 부르는 함수. 테스트에서는 가짜로 바꿔 끼운다 */
@@ -130,23 +140,42 @@ export function createClaudeModel({ settings, onUsage = logUsage, client }: Clau
   return {
     name: settings.model,
     async run(request, options = {}) {
+      const params = {
+        ...request,
+        model: settings.model,
+        // 생각은 늘 켜져 있고(적응형), 깊이만 정한다. 음성 대화는 빨라야 해서 기본은 low
+        output_config: {
+          effort: options.effort ?? settings.effort,
+          ...(options.jsonSchema ? { format: { type: "json_schema" as const, schema: options.jsonSchema } } : {}),
+        },
+        // 도구 정의와 시스템 프롬프트는 매번 같으므로 캐시해 비용과 지연을 줄인다
+        cache_control: { type: "ephemeral" as const },
+        fallbacks: "default" as const,
+        betas: [FALLBACK_BETA],
+      };
+      const requestOptions = options.timeoutMs ? { timeout: options.timeoutMs } : undefined;
       try {
-        const message = await anthropic.beta.messages.create(
-          {
-          ...request,
-          model: settings.model,
-          // 생각은 늘 켜져 있고(적응형), 깊이만 정한다. 음성 대화는 빨라야 해서 기본은 low
-          output_config: {
-            effort: options.effort ?? settings.effort,
-            ...(options.jsonSchema ? { format: { type: "json_schema" as const, schema: options.jsonSchema } } : {}),
-          },
-          // 도구 정의와 시스템 프롬프트는 매번 같으므로 캐시해 비용과 지연을 줄인다
-          cache_control: { type: "ephemeral" },
-          fallbacks: "default",
-          betas: [FALLBACK_BETA],
-          },
-          options.timeoutMs ? { timeout: options.timeoutMs } : undefined,
-        );
+        if (!options.onText) {
+          const message = await anthropic.beta.messages.create(params, requestOptions);
+          onUsage(usageOf(message));
+          return message;
+        }
+        // 글자가 나오는 대로 넘긴다. 도구 입력은 나눠 받지 않는다 (짧고, strict 검사를 그대로 받으려고)
+        const stream = anthropic.beta.messages.stream(params, requestOptions);
+        let sentText = false;
+        for await (const event of stream) {
+          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+            if (event.delta.text) {
+              sentText = true;
+              options.onText(event.delta.text);
+            }
+          } else if (event.type === "content_block_start" && event.content_block.type !== "text" && event.content_block.type !== "thinking" && sentText) {
+            // 글 뒤에 도구 호출이나 대체 모델 전환이 왔다: 앞의 글은 답이 아니다
+            sentText = false;
+            options.onRestart?.();
+          }
+        }
+        const message = await stream.finalMessage();
         onUsage(usageOf(message));
         return message;
       } catch (e) {

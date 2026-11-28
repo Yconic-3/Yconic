@@ -70,6 +70,22 @@ export interface AgentChatResponse {
   actions: AgentAction[];
 }
 
+/**
+ * 답을 글자가 나오는 대로 받기: POST /chat/stream (docs/decisions/0020).
+ * 요청은 /chat과 같고, 응답은 한 줄에 JSON 하나씩이다 (application/x-ndjson).
+ *   text    답의 다음 글자들. 화면은 문장이 끝나는 대로 읽기 시작할 수 있다
+ *   reset   지금까지 받은 글을 버린다 (답이 아니라 도구를 부르기 전의 말이었다)
+ *   actions 지금까지 정해진 할 일. 할 일이 있으면 화면은 먼저 읽지 않고 끝(done)을 기다린다
+ *   done    끝. 완성된 답과 할 일 (/chat의 응답과 같다). 이것이 기준이다
+ *   error   실패. 화면은 규칙 기반 해석으로 넘긴다
+ */
+export type AgentStreamEvent =
+  | { type: "text"; delta: string }
+  | { type: "reset" }
+  | { type: "actions"; actions: AgentAction[] }
+  | { type: "done"; response: AgentChatResponse }
+  | { type: "error"; code: AgentErrorCode; message: string };
+
 export interface AgentHealth {
   ok: true;
   /** AI가 켜져 있는지 (API 키가 있는지). false면 화면이 규칙 기반 해석으로 돌아간다 */

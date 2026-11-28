@@ -1,4 +1,4 @@
-import type { AgentAction, AgentChatRequest, AgentChatResponse, AgentHealth } from "@yconic/shared-types";
+import type { AgentAction, AgentChatRequest, AgentChatResponse, AgentHealth, AgentStreamEvent } from "@yconic/shared-types";
 import { agentBaseUrl, getApiMode } from "@/lib/api-mode";
 import type { Intent } from "./intent";
 
@@ -9,6 +9,20 @@ import type { Intent } from "./intent";
  */
 export interface AgentClient {
   chat(request: AgentChatRequest): Promise<AgentChatResponse | null>;
+  /**
+   * chat과 같지만, 답의 글자가 나오는 대로 알려 준다 (docs/decisions/0020). 끝나면 완성된 답을 돌려준다.
+   * 에이전트가 스트림을 모르면(예전 서버, 웹앱 안 에이전트) chat으로 받는다. 그때는 중간 알림이 없다.
+   */
+  chatStream(request: AgentChatRequest, handlers: AgentStreamHandlers): Promise<AgentChatResponse | null>;
+}
+
+export interface AgentStreamHandlers {
+  /** 답의 다음 글자들 */
+  onText?(delta: string): void;
+  /** 지금까지 받은 글을 버린다 */
+  onReset?(): void;
+  /** 지금까지 정해진 할 일 */
+  onActions?(actions: AgentAction[]): void;
 }
 
 /** 에이전트를 못 쓸 때 다시 확인하기까지 기다리는 시간 */
@@ -19,6 +33,8 @@ const HEALTH_TIMEOUT_MS = 3_000;
  * (예전에는 25초까지 기다려서, AI가 느릴 때 화면이 '답을 생각하고 있어요'에 멈춘 것처럼 보였다).
  */
 export const CHAT_TIMEOUT_MS = 12_000;
+/** 글자가 나오는 대로 받을 때: 첫 소식까지는 CHAT_TIMEOUT_MS, 전체는 이만큼까지 기다린다 */
+export const STREAM_TOTAL_TIMEOUT_MS = 30_000;
 
 export function createAgentClient(baseUrl: string, fetchFn: typeof fetch = (...args) => fetch(...args), now = () => Date.now()): AgentClient {
   // null: 아직 모름, true: 쓸 수 있음, 숫자: 이 시각까지 쓰지 않음
@@ -37,31 +53,101 @@ export function createAgentClient(baseUrl: string, fetchFn: typeof fetch = (...a
     return state === true;
   }
 
-  return {
-    async chat(request) {
-      if (!(await available())) return null;
-      try {
-        const res = await fetchFn(`${baseUrl}/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(request),
-          signal: AbortSignal.timeout(CHAT_TIMEOUT_MS),
-        });
-        if (res.ok) return (await res.json()) as AgentChatResponse;
-        // 키가 빠졌으면 한동안 묻지 않는다. 바쁨·요청 수 초과 같은 일시적인 오류는 이번 말만 규칙으로 처리한다
-        const error = (await res.json().catch(() => null)) as { code?: string } | null;
-        if (error?.code === "AI_DISABLED") state = now() + RETRY_AFTER_MS;
-        return null;
-      } catch {
-        // 연결이 끊겼다. 서버가 꺼졌을 수 있으니 한동안 묻지 않는다
-        state = now() + RETRY_AFTER_MS;
-        return null;
+  // 이 에이전트가 /chat/stream을 아는지. 모른다고 답하면(404) 그 뒤로는 /chat만 쓴다
+  let streamSupported = true;
+
+  /** 답하지 못한 응답: 키가 빠졌으면 한동안 묻지 않는다. 바쁨·요청 수 초과 같은 일시적인 오류는 이번 말만 규칙으로 처리한다 */
+  async function failed(res: Response): Promise<null> {
+    const error = (await res.json().catch(() => null)) as { code?: string } | null;
+    if (error?.code === "AI_DISABLED") state = now() + RETRY_AFTER_MS;
+    return null;
+  }
+
+  async function chat(request: AgentChatRequest): Promise<AgentChatResponse | null> {
+    if (!(await available())) return null;
+    try {
+      const res = await fetchFn(`${baseUrl}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+        signal: AbortSignal.timeout(CHAT_TIMEOUT_MS),
+      });
+      if (res.ok) return (await res.json()) as AgentChatResponse;
+      return failed(res);
+    } catch {
+      // 연결이 끊겼다. 서버가 꺼졌을 수 있으니 한동안 묻지 않는다
+      state = now() + RETRY_AFTER_MS;
+      return null;
+    }
+  }
+
+  async function chatStream(request: AgentChatRequest, handlers: AgentStreamHandlers): Promise<AgentChatResponse | null> {
+    if (!streamSupported) return chat(request);
+    if (!(await available())) return null;
+    const abort = new AbortController();
+    // 첫 소식이 늦으면 그만둔다. 소식이 오기 시작하면 전체 시간만 본다
+    let firstTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => abort.abort(), CHAT_TIMEOUT_MS);
+    const totalTimer = setTimeout(() => abort.abort(), STREAM_TOTAL_TIMEOUT_MS);
+    const gotNews = () => {
+      if (firstTimer) clearTimeout(firstTimer);
+      firstTimer = null;
+    };
+    try {
+      const res = await fetchFn(`${baseUrl}/chat/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+        signal: abort.signal,
+      });
+      if (res.status === 404 || res.status === 405) {
+        streamSupported = false;
+        return chat(request);
       }
-    },
-  };
+      if (!res.ok) return failed(res);
+      // 스트림이 아니라 통째로 온 답이면 그대로 쓴다
+      if (!res.body || !(res.headers.get("content-type") ?? "").includes("ndjson")) return (await res.json()) as AgentChatResponse;
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let result: AgentChatResponse | null = null;
+      const handle = (line: string) => {
+        if (!line.trim()) return;
+        gotNews();
+        const event = JSON.parse(line) as AgentStreamEvent;
+        if (event.type === "text") handlers.onText?.(event.delta);
+        else if (event.type === "reset") handlers.onReset?.();
+        else if (event.type === "actions") handlers.onActions?.(event.actions);
+        else if (event.type === "done") result = event.response;
+        else if (event.type === "error" && event.code === "AI_DISABLED") state = now() + RETRY_AFTER_MS;
+      };
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let cut: number;
+        while ((cut = buffer.indexOf("\n")) >= 0) {
+          handle(buffer.slice(0, cut));
+          buffer = buffer.slice(cut + 1);
+        }
+      }
+      handle(buffer);
+      // 끝(done)을 받지 못하고 끊겼으면 답이 없는 것으로 본다
+      return result;
+    } catch {
+      // 연결이 끊겼거나 너무 오래 걸렸다. 서버가 꺼졌을 수 있으니 한동안 묻지 않는다
+      state = now() + RETRY_AFTER_MS;
+      return null;
+    } finally {
+      gotNews();
+      clearTimeout(totalTimer);
+    }
+  }
+
+  return { chat, chatStream };
 }
 
-const OFF: AgentClient = { chat: async () => null };
+const OFF: AgentClient = { chat: async () => null, chatStream: async () => null };
 
 /** 환경에 맞는 에이전트 연결. 모의 모드(서버 없이 화면만 볼 때)에서는 쓰지 않는다 */
 export function createDefaultAgentClient(): AgentClient {

@@ -42,6 +42,7 @@ import { GuideDialog } from "./guide-dialog";
 import { EXERCISE_TIP, GUIDE_SPEECH_BODY, GUIDE_SPEECH_END, isGuideSkip, markIntroSeen, markTipSeen, readGuideSeen } from "@/user/lib/guide";
 import { afterWakeWord, ARM_MS, createCommandGate, WAKE_WORD } from "@/user/lib/wake-word";
 import { classifyAnswer } from "@/user/lib/confirm";
+import { createStreamSpeaker, type StreamSpeaker } from "@/user/lib/stream-speech";
 import { BACKCHANNEL_DELAY_MS, BACKCHANNEL_MAX_MS, endOfSpeechWaitMs, isBackchannelEcho, pickBackchannel } from "@/user/lib/turn-taking";
 import { readHistory, recommendNext, recordCompletion, timesDone } from "@/user/lib/history";
 import { ShellContext, type PageCommandHandler, type PageInfo, type ShellApi, type ShellMode } from "@/user/lib/shell";
@@ -355,9 +356,11 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
    */
   const quietRepliesRef = useRef(false);
   const say = useCallback(
-    (text: string, audioUrl?: string | null, opts?: { fitSec?: number; guide?: boolean }) => {
+    (text: string, audioUrl?: string | null, opts?: { fitSec?: number; guide?: boolean; spoken?: Promise<boolean> }) => {
       addMessage("bot", text);
       setLastSaid(text);
+      // 받는 대로 이미 읽고 있는 답 (0020): 다시 읽지 않고, 그 읽기가 끝나기를 기다린다
+      if (opts?.spoken) return opts.spoken;
       if (quietRepliesRef.current && !opts?.guide) {
         setAnnounce(text);
         return Promise.resolve(true);
@@ -1101,7 +1104,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
 
   /** 에이전트의 답: 화면 이동·멈춤은 바로, 답을 읽고, 안내를 시작하는 조작은 답을 다 읽은 뒤에 한다 */
   const runAgentResponse = useCallback(
-    async (response: AgentChatResponse, seq: number) => {
+    async (response: AgentChatResponse, seq: number, early: StreamSpeaker | null = null) => {
       // 화면을 바꾸는 할 일은 대답을 읽은 뒤 먼저 묻는다 (docs/decisions/0012)
       const isNav = (a: AgentAction) => a.type === "SHOW_LIST" || a.type === "NAVIGATE" || (a.type === "OPEN_EXERCISE" && a.exerciseId !== exercise?.id);
       const nav = response.actions.filter(isNav);
@@ -1109,7 +1112,8 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       before.forEach(runAgentAction);
       const stopped = response.actions.some((a) => a.type === "PLAYBACK" && a.command === "STOP");
       const reply = response.reply || (stopped ? SAFETY_MESSAGE : "");
-      if (reply) await say(reply);
+      // early: 답을 받는 대로 이미 앞부분을 읽기 시작했다. 남은 뒷부분만 이어서 읽는다
+      if (reply) await say(reply, null, early ? { spoken: early.finish(reply) } : undefined);
       // 읽는 사이에 사용자가 다른 말을 했으면 미뤄 둔 조작은 하지 않는다
       if (seq !== commandSeqRef.current) return;
       after.forEach(runAgentAction);
@@ -1219,22 +1223,47 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
         backchannelRef.current = { text: phrase, until: Date.now() + 3500 };
         backchannelDone = Promise.race([speak(phrase, { rate: rateRef.current }), new Promise((r) => window.setTimeout(r, BACKCHANNEL_MAX_MS))]);
       }, BACKCHANNEL_DELAY_MS);
+      // 받는 대로 읽기 (0020): 답의 글자가 오는 대로, 읽을 만큼 모인 곳부터 읽기 시작한다.
+      // 말로 물었을 때만, 그리고 할 일(화면 바꾸기·재생 조작)이 없는 답일 때만 한다. 할 일이 있으면 읽는 중에 화면이 바뀌지 않게 끝까지 받고 읽는다.
+      let early: StreamSpeaker | null = null;
+      let earlyAllowed = !quietRepliesRef.current && speechEnabledRef.current;
+      const dropEarly = () => {
+        if (!early) return;
+        const wasReading = early.started();
+        early.cancel();
+        early = null;
+        if (wasReading) stopSpeaking();
+      };
+      const speakEarly = async (chunk: string) => {
+        // 맞장구를 읽는 중이면 다 읽은 뒤에 시작한다
+        await (backchannelDone ?? Promise.resolve());
+        if (seq !== commandSeqRef.current) return false;
+        setThinking(false);
+        return speak(chunk, { rate: rateRef.current });
+      };
       const finish = (response: AgentChatResponse | null) => {
         if (settled) return;
         settled = true;
         window.clearTimeout(giveUp);
         window.clearTimeout(backchannelTimer);
         void (backchannelDone ?? Promise.resolve()).then(() => {
-          if (seq !== commandSeqRef.current) return;
+          if (seq !== commandSeqRef.current) {
+            early?.cancel();
+            return;
+          }
           setThinking(false);
+          const reading = early?.started() ? early : null;
+          if (response) void runAgentResponse(response, seq, reading);
+          // 읽다가 연결이 끊겼다: 읽은 데서 멈춘다. 같은 말을 규칙으로 다시 처리하지 않는다
+          else if (reading) reading.cancel();
           // 에이전트를 못 쓰면 규칙 기반 해석으로 처리한다
-          if (response) void runAgentResponse(response, seq);
           else runIntentAsking(intent, text);
         });
       };
       const giveUp = window.setTimeout(() => finish(null), THINKING_MAX_MS);
       void agent
-        .chat({
+        .chatStream(
+          {
           message: text,
           history,
           context: {
@@ -1245,7 +1274,26 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
             learner,
             ...(currentSeg ? { currentGuide: guideOf(currentSeg) || currentSeg.voiceGuide } : {}),
           },
-        })
+          },
+          {
+            onText: (delta) => {
+              if (settled || seq !== commandSeqRef.current) return;
+              // 답이 오기 시작했다: 아직 하지 않은 맞장구는 하지 않고, 오래 걸린다고 포기하지도 않는다
+              window.clearTimeout(backchannelTimer);
+              window.clearTimeout(giveUp);
+              if (!earlyAllowed) return;
+              early ??= createStreamSpeaker(speakEarly);
+              early.push(delta);
+            },
+            // 지금까지 온 글은 답이 아니었다 (도구를 부르기 전의 말). 읽기 시작했으면 멈춘다
+            onReset: dropEarly,
+            onActions: (actions) => {
+              if (actions.length === 0) return;
+              earlyAllowed = false;
+              dropEarly();
+            },
+          },
+        )
         .then(finish, () => finish(null));
     },
     [accountId, addMessage, agent, closeGuide, exercise, exercises, guideOf, learning, mode, noteStruggle, pathname, routeExerciseId, runAgentResponse, runIntentAsking, say, setPendingConfirm, view],
