@@ -45,6 +45,9 @@ function loadGoogleScript(): Promise<void> {
 /**
  * 구글이 그려 주는 로그인 버튼. 누르면 구글 창에서 계정을 고르고, 구글이 준 ID 토큰을 onCredential로 넘긴다.
  * 버튼은 구글의 것이라 모양을 바꿀 수 없다. 화면 읽기 프로그램에는 "Google 계정으로 계속하기" 버튼으로 읽힌다.
+ * - 흰 버튼(outline)을 쓴다. 검은 버튼은 어두운 바탕과 거의 같은 색이라 버튼의 테두리가 보이지 않는다.
+ * - 버튼을 담는 칸은 color-scheme을 light로 둔다. 구글의 버튼은 밝은 색 구성의 iframe인데, 우리 화면은 dark라서
+ *   그대로 두면 브라우저가 iframe 뒤를 흰색으로 칠해 버튼 둘레에 흰 상자가 보인다.
  */
 function GoogleButton({ clientId, onCredential, onError }: { clientId: string; onCredential(credential: string): void; onError(message: string): void }) {
   const holder = useRef<HTMLDivElement>(null);
@@ -66,7 +69,7 @@ function GoogleButton({ clientId, onCredential, onError }: { clientId: string; o
           },
         });
         holder.current.replaceChildren();
-        api.renderButton(holder.current, { type: "standard", theme: "filled_black", size: "large", shape: "pill", text: "continue_with", logo_alignment: "left", locale: "ko", width: Math.min(360, holder.current.clientWidth || 360) });
+        api.renderButton(holder.current, { type: "standard", theme: "outline", size: "large", shape: "pill", text: "continue_with", logo_alignment: "left", locale: "ko", width: Math.min(360, holder.current.clientWidth || 360) });
       })
       .catch((e: unknown) => !cancelled && handlers.current.onError(e instanceof Error ? e.message : "구글 로그인을 불러오지 못했습니다."));
     return () => {
@@ -74,7 +77,7 @@ function GoogleButton({ clientId, onCredential, onError }: { clientId: string; o
     };
   }, [clientId]);
 
-  return <div ref={holder} className="flex min-h-[44px] w-full justify-center" />;
+  return <div ref={holder} className="flex min-h-[44px] w-full justify-center" style={{ colorScheme: "light" }} />;
 }
 
 /**
