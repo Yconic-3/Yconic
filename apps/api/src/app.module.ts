@@ -14,7 +14,10 @@ import { videosDir, type ApiConfig } from "./config";
 import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
 import { PublicController } from "./public/public.controller";
-import { AI, ANALYZER, CONFIG, DB, GOOGLE } from "./tokens";
+import { AI, ANALYZER, CONFIG, DB, GOOGLE, TTS } from "./tokens";
+import type { SpeechSynthesizer } from "./tts/synthesizer";
+import { TtsController } from "./tts/tts.controller";
+import { TtsService } from "./tts/tts.service";
 import type { GoogleVerifier } from "./auth/google";
 import type { AiModel } from "@yconic/ai-common";
 import { LearningService } from "./me/learning.service";
@@ -22,7 +25,7 @@ import { WorkerService } from "./worker/worker.service";
 
 @Module({})
 export class AppModule {
-  static create(config: ApiConfig, db: Database, analyzer: VideoAnalyzer, ai: AiModel | null, google: GoogleVerifier | null): DynamicModule {
+  static create(config: ApiConfig, db: Database, analyzer: VideoAnalyzer, ai: AiModel | null, google: GoogleVerifier | null, tts: SpeechSynthesizer | null): DynamicModule {
     return {
       module: AppModule,
       imports: [
@@ -36,13 +39,15 @@ export class AppModule {
           defParamCharset: "utf8",
         }),
       ],
-      controllers: [AuthController, PublicController, AdminController, MeController],
+      controllers: [AuthController, PublicController, AdminController, MeController, TtsController],
       providers: [
         { provide: CONFIG, useValue: config },
         { provide: DB, useValue: db },
         { provide: ANALYZER, useValue: analyzer },
         { provide: AI, useValue: ai },
         { provide: GOOGLE, useValue: google },
+        { provide: TTS, useValue: tts },
+        TtsService,
         LearningService,
         AuthService,
         AuthGuard,

@@ -9,6 +9,7 @@ import { inject } from "vitest";
 import type { AiModel } from "@yconic/ai-common";
 import type { VideoAnalyzer } from "@yconic/content-analysis";
 import type { GoogleVerifier } from "../src/auth/google";
+import type { SpeechSynthesizer } from "../src/tts/synthesizer";
 import { loadConfig, type ApiConfig } from "../src/config";
 import { createApp } from "../src/create-app";
 import { WorkerService } from "../src/worker/worker.service";
@@ -26,12 +27,12 @@ export interface TestServer {
   close(): Promise<void>;
 }
 
-export async function startTestServer(opts: { ai?: AiModel | null; analyzer?: VideoAnalyzer; google?: GoogleVerifier | null; config?: Partial<ApiConfig> } = {}): Promise<TestServer> {
+export async function startTestServer(opts: { ai?: AiModel | null; analyzer?: VideoAnalyzer; google?: GoogleVerifier | null; tts?: SpeechSynthesizer | null; config?: Partial<ApiConfig> } = {}): Promise<TestServer> {
   const storageDir = mkdtempSync(join(tmpdir(), "yconic-api-storage-"));
   // 작업기는 자동으로 돌지 않게 하고, 테스트가 runWorker로 직접 돌린다.
   const config = loadConfig({ port: 0, storageDir, jobStageMs: 1000, ttsMs: 1000, workerIntervalMs: 0, webOrigins: ["http://localhost:3000"], ...opts.config });
   const conn = connectDatabase(inject("databaseUrl"));
-  const app = await createApp({ config, db: conn.db, quiet: true, ai: opts.ai ?? null, analyzer: opts.analyzer, google: opts.google ?? null });
+  const app = await createApp({ config, db: conn.db, quiet: true, ai: opts.ai ?? null, analyzer: opts.analyzer, google: opts.google ?? null, tts: opts.tts ?? null });
   await app.listen(0, "127.0.0.1");
   const baseUrl = (await app.getUrl()).replace("[::1]", "localhost");
   config.publicUrl = baseUrl;

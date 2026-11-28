@@ -42,8 +42,10 @@ import { GuideDialog } from "./guide-dialog";
 import { EXERCISE_TIP, GUIDE_SPEECH_BODY, GUIDE_SPEECH_END, isGuideSkip, markIntroSeen, markTipSeen, readGuideSeen } from "@/user/lib/guide";
 import { afterWakeWord, ARM_MS, createCommandGate, WAKE_WORD } from "@/user/lib/wake-word";
 import { classifyAnswer } from "@/user/lib/confirm";
+import { apiBaseUrl, getApiMode } from "@/lib/api-mode";
+import { getServerVoice } from "@/user/lib/server-voice";
 import { createStreamSpeaker, type StreamSpeaker } from "@/user/lib/stream-speech";
-import { BACKCHANNEL_DELAY_MS, BACKCHANNEL_MAX_MS, endOfSpeechWaitMs, isBackchannelEcho, pickBackchannel } from "@/user/lib/turn-taking";
+import { BACKCHANNEL_DELAY_MS, BACKCHANNEL_MAX_MS, BACKCHANNELS, endOfSpeechWaitMs, isBackchannelEcho, pickBackchannel } from "@/user/lib/turn-taking";
 import { readHistory, recommendNext, recordCompletion, timesDone } from "@/user/lib/history";
 import { ShellContext, type PageCommandHandler, type PageInfo, type ShellApi, type ShellMode } from "@/user/lib/shell";
 import {
@@ -51,8 +53,10 @@ import {
   getServerSpeechState,
   getSpeechState,
   pauseSpeaking,
+  primeAudio,
   RATE_STEP,
   resumeSpeaking,
+  setServerVoice,
   setSpeechEnabled,
   speak,
   spokenEcho,
@@ -172,6 +176,30 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     setAccountReady(true);
   }, []);
   useEffect(refreshAccount, [pathname, refreshAccount]);
+  // 서버 목소리 (0021): 서버가 음성 파일을 만들어 줄 수 있으면 기기의 목소리 대신 그 목소리로 읽는다.
+  // 서버 없이 볼 때(예시 데이터 모드)나 서버에 키가 없으면 기기의 목소리 그대로다.
+  useEffect(() => {
+    if (getApiMode() !== "http") return;
+    let alive = true;
+    const voice = getServerVoice(apiBaseUrl());
+    void voice.available().then((ok) => {
+      if (!alive || !ok) return;
+      setServerVoice(voice.urlFor);
+      // 맞장구는 기다리는 동안 바로 나와야 하므로 미리 받아 둔다
+      for (const phrase of BACKCHANNELS) void voice.urlFor(phrase);
+    });
+    // 휴대폰 브라우저는 사람이 화면을 누른 뒤에야 소리를 내게 한다: 처음 누를 때 재생기를 깨워 둔다
+    const prime = () => primeAudio();
+    window.addEventListener("pointerdown", prime, { once: true });
+    window.addEventListener("keydown", prime, { once: true });
+    return () => {
+      alive = false;
+      setServerVoice(null);
+      window.removeEventListener("pointerdown", prime);
+      window.removeEventListener("keydown", prime);
+    };
+  }, []);
+
   // 들어올 때 서버에 로그인이 아직 유효한지 묻는다. 로그인 유지면 이때 기간이 늘어나고, 서버에서 끝난 로그인은 여기서 지워진다 (0017)
   useEffect(() => {
     let alive = true;
