@@ -30,7 +30,10 @@ export interface ApiConfig {
   maxVideoBytes: number;
   /** 나눠 올릴 때 조각 하나의 크기. 서버 앞 프록시가 받는 크기(약 1MB)보다 작아야 한다 */
   uploadChunkBytes: number;
+  /** 로그인 유지를 켰을 때 로그인이 남는 날 수. 쓰는 동안 계속 늘어난다 */
   sessionDays: number;
+  /** 로그인 유지를 껐을 때 서버에 로그인이 남는 시간 */
+  shortSessionHours: number;
   /** AI 제작 작업이 한 단계 진행하는 데 걸리는 시간 (모의 분석) */
   jobStageMs: number;
   /** 음성 파일 생성에 걸리는 시간 (모의 TTS) */
@@ -60,6 +63,7 @@ export function loadConfig(overrides: Partial<ApiConfig> = {}): ApiConfig {
     maxVideoBytes: 2 * 1024 * 1024 * 1024,
     uploadChunkBytes: Number(process.env.UPLOAD_CHUNK_BYTES ?? 768 * 1024),
     sessionDays: 30,
+    shortSessionHours: 24,
     jobStageMs: Number(process.env.JOB_STAGE_MS ?? 2500),
     ttsMs: Number(process.env.TTS_MS ?? 3000),
     workerIntervalMs: Number(process.env.WORKER_INTERVAL_MS ?? 1000),

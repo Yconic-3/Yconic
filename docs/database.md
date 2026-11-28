@@ -53,6 +53,7 @@ erDiagram
         text token_hash PK
         text account_id FK
         timestamptz expires_at
+        boolean remember "로그인 유지. true면 쓰는 동안 expires_at을 뒤로 민다 (0017)"
     }
     videos {
         text id PK

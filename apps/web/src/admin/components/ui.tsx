@@ -12,15 +12,16 @@ import {
 
 type Variant = "primary" | "secondary" | "danger" | "ghost";
 
+// 색 이름은 globals.css 의 .admin-root 에서 소리벗 색으로 바뀐다 (blue → 네온 그린, white → 패널, text-white → 밝은 버튼 위의 어두운 글자)
 const variantClass: Record<Variant, string> = {
-  primary: "bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-300",
-  secondary: "bg-white text-slate-800 border border-slate-300 hover:bg-slate-50 disabled:text-slate-400",
+  primary: "bg-accent-grad text-white",
+  secondary: "bg-white text-slate-800 border-2 border-slate-300 hover:border-blue-600 hover:bg-slate-100 disabled:text-slate-400 disabled:hover:border-slate-300",
   danger: "bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300",
   ghost: "bg-transparent text-slate-700 hover:bg-slate-100 disabled:text-slate-400",
 };
 
 const baseButton =
-  "inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed";
+  "inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-bold transition disabled:cursor-not-allowed";
 
 export function Button({
   variant = "secondary",
@@ -50,10 +51,10 @@ export function LinkButton({
 
 export function Card({ title, actions, children, className = "" }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section className={`rounded-lg border border-slate-200 bg-white shadow-sm ${className}`}>
+    <section className={`rounded-2xl border-2 border-slate-200 bg-white ${className}`}>
       {(title || actions) && (
         <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-          {title && <h2 className="text-base font-semibold">{title}</h2>}
+          {title && <h2 className="text-base font-extrabold">{title}</h2>}
           {actions && <div className="flex items-center gap-2">{actions}</div>}
         </header>
       )}
@@ -85,7 +86,7 @@ export function Field({ label, hint, error, children, required }: { label: strin
 }
 
 const control =
-  "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 disabled:bg-slate-100 disabled:text-slate-500";
+  "w-full rounded-xl border-2 border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 disabled:bg-slate-100 disabled:text-slate-500";
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input({ className = "", ...props }, ref) {
   return <input ref={ref} className={`${control} ${className}`} {...props} />;
@@ -110,7 +111,7 @@ export function Alert({ kind, children }: { kind: "info" | "warning" | "error" |
     success: "border-green-200 bg-green-50 text-green-900",
   }[kind];
   return (
-    <div role={kind === "error" ? "alert" : "status"} className={`rounded-md border px-3 py-2 text-sm ${cls}`}>
+    <div role={kind === "error" ? "alert" : "status"} className={`rounded-xl border-2 px-3 py-2 text-sm ${cls}`}>
       {children}
     </div>
   );
@@ -125,18 +126,18 @@ export function Badge({ tone, children }: { tone: "gray" | "blue" | "amber" | "g
     red: "bg-red-100 text-red-800",
     purple: "bg-purple-100 text-purple-800",
   }[tone];
-  return <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>{children}</span>;
+  return <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-bold ${cls}`}>{children}</span>;
 }
 
 export function EmptyState({ children }: { children: ReactNode }) {
-  return <p className="rounded-md border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500">{children}</p>;
+  return <p className="rounded-2xl border-2 border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500">{children}</p>;
 }
 
 export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
   return (
     <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
       <div>
-        <h1 className="text-2xl font-bold">{title}</h1>
+        <h1 className="text-[28px] font-extrabold leading-tight">{title}</h1>
         {description && <p className="mt-1 text-sm text-slate-600">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}

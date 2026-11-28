@@ -91,6 +91,8 @@ export function LoginForm({ onSignedIn, idPrefix = "login" }: { onSignedIn: (acc
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // 로그인 유지 (docs/decisions/0017). 켜 두면 이 기기에서 다시 들어와도 로그인이 풀리지 않는다
+  const [remember, setRemember] = useState(true);
   const [config, setConfig] = useState<AuthConfig | null>(null);
 
   useEffect(() => {
@@ -116,7 +118,7 @@ export function LoginForm({ onSignedIn, idPrefix = "login" }: { onSignedIn: (acc
 
   function submit(e: FormEvent) {
     e.preventDefault();
-    void attempt(() => (mode === "signup" ? signUp(name, email, password) : signIn(email, password)));
+    void attempt(() => (mode === "signup" ? signUp(name, email, password, remember) : signIn(email, password, remember)));
   }
 
   function switchMode(next: "login" | "signup") {
@@ -133,14 +135,28 @@ export function LoginForm({ onSignedIn, idPrefix = "login" }: { onSignedIn: (acc
     switchMode("login");
     setEmail(a.email);
     setPassword(a.password);
-    void attempt(() => signIn(a.email, a.password));
+    void attempt(() => signIn(a.email, a.password, remember));
   };
+
+  // 로그인 유지 고르기. 구글 로그인과 이메일 로그인 모두에 적용되므로 맨 위에 둔다
+  const rememberBox = (
+    <label htmlFor={`${idPrefix}-remember`} className="flex min-h-[56px] cursor-pointer items-center gap-3 rounded-2xl border-2 border-control bg-panel px-[18px] py-3">
+      <input id={`${idPrefix}-remember`} type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} aria-describedby={`${idPrefix}-remember-hint`} className="h-7 w-7 shrink-0 accent-accent" />
+      <span className="flex flex-col">
+        <span className="text-[19px] font-bold">로그인 유지</span>
+        <span id={`${idPrefix}-remember-hint`} className="text-[16px] text-ink-3">
+          {remember ? "이 기기에서 다시 들어와도 로그인되어 있습니다." : "브라우저를 닫으면 로그아웃됩니다. 함께 쓰는 기기에서는 끄세요."}
+        </span>
+      </span>
+    </label>
+  );
 
   return (
     <>
+      {rememberBox}
       {config?.googleClientId && (
         <section aria-label="구글 계정으로 로그인" className="flex flex-col gap-3">
-          <GoogleButton clientId={config.googleClientId} onCredential={(credential) => void attempt(() => signInWithGoogle(credential))} onError={setError} />
+          <GoogleButton clientId={config.googleClientId} onCredential={(credential) => void attempt(() => signInWithGoogle(credential, remember))} onError={setError} />
           <p className="m-0 text-center text-[17px] text-ink-3">구글 계정이 있으면 가입하지 않고 바로 쓸 수 있습니다.</p>
         </section>
       )}

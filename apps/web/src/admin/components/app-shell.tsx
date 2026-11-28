@@ -56,10 +56,19 @@ export function AppShell({ children }: { children: ReactNode }) {
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:bg-white focus:px-3 focus:py-2">
         본문으로 건너뛰기
       </a>
-      <aside className="sticky top-0 flex h-screen w-56 shrink-0 flex-col border-r border-slate-200 bg-white">
-        <div className="border-b border-slate-200 px-4 py-4">
-          <Link href="/admin" className="text-lg font-bold">
-            Yconic 관리자
+      <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r-2 border-slate-200 bg-white">
+        <div className="border-b-2 border-slate-200 px-4 py-4">
+          {/* 사용자 화면과 같은 상표 (소리벗 로고 + 이름). 관리자 화면임을 글자로 붙인다 */}
+          <Link href="/admin" className="flex items-center gap-2.5" aria-label="소리벗 관리자 대시보드">
+            <svg aria-hidden="true" width="32" height="32" viewBox="0 0 40 40" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="flex-none text-blue-600">
+              <path d="M8 20h4l3-9 4 18 4-13 3 6h6" />
+            </svg>
+            <span className="whitespace-nowrap text-[22px] font-extrabold tracking-[-0.5px]" aria-hidden>
+              소리벗
+            </span>
+            <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700" aria-hidden>
+              관리자
+            </span>
           </Link>
           {mode === "mock" && (
             <p className="mt-1 text-xs text-amber-700" title="백엔드 없이 브라우저 안의 모의 데이터로 동작합니다.">
@@ -76,7 +85,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <Link
                     href={n.href}
                     aria-current={active ? "page" : undefined}
-                    className={`block rounded-md px-3 py-2 text-sm ${active ? "bg-blue-50 font-semibold text-blue-700" : "text-slate-700 hover:bg-slate-100"}`}
+                    className={`block rounded-xl border-2 px-3 py-2.5 text-[15px] ${active ? "border-blue-600 bg-blue-50 font-extrabold text-blue-700" : "border-transparent font-bold text-slate-700 hover:bg-slate-100"}`}
                   >
                     {n.label}
                   </Link>
@@ -84,14 +93,14 @@ export function AppShell({ children }: { children: ReactNode }) {
               );
             })}
           </ul>
-          <p className="mt-4 border-t border-slate-100 px-3 pt-3">
+          <p className="mt-4 border-t-2 border-slate-200 px-3 pt-3">
             <Link href="/" className="text-sm text-slate-600 hover:text-blue-700 hover:underline">
               ← 사용자 화면으로
             </Link>
           </p>
         </nav>
-        <div className="border-t border-slate-200 px-4 py-3 text-sm">
-          <p className="font-medium">{user.name}</p>
+        <div className="border-t-2 border-slate-200 px-4 py-3 text-sm">
+          <p className="font-bold">{user.name}</p>
           <p className="text-xs text-slate-500">
             {ADMIN_ROLE_LABELS[user.role]} · {user.email}
           </p>

@@ -23,7 +23,7 @@ import {
   type MovementId,
   type PersonalizedGuides,
 } from "@yconic/shared-types";
-import { readSignedInAccount, signOut, type SignedInAccount } from "@/lib/auth";
+import { readSignedInAccount, signOut, type SignedInAccount, verifySession } from "@/lib/auth";
 import { createDefaultAgentClient, handleLocally, splitAgentActions } from "@/user/lib/agent";
 import { createUserApi, errorMessage, type PublishedExercise } from "@/user/lib/api";
 import { createCoursesApi } from "@/user/lib/courses-api";
@@ -170,6 +170,14 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     setAccountReady(true);
   }, []);
   useEffect(refreshAccount, [pathname, refreshAccount]);
+  // 들어올 때 서버에 로그인이 아직 유효한지 묻는다. 로그인 유지면 이때 기간이 늘어나고, 서버에서 끝난 로그인은 여기서 지워진다 (0017)
+  useEffect(() => {
+    let alive = true;
+    void verifySession().then((a) => alive && setAccount(a));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // 내 강의: 로그인하면 불러온다. 로그인하지 않았으면 null (모든 동작을 자세하게 안내)
   const coursesApi = useMemo(() => createCoursesApi(), []);
