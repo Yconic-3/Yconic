@@ -10,6 +10,8 @@ import {
   type ContentListFilter,
   type CreateContentJobInput,
   type CreateUploadInput,
+  PASSWORD_MIN_LENGTH,
+  type SignupInput,
   type ExerciseSegment,
   type MovementId,
   type MyCourses,
@@ -161,6 +163,18 @@ export function parseVideoMeta(body: Record<string, unknown>): { durationSec: nu
   const durationSec = n(body.durationSec, "영상 길이");
   if (!(durationSec > 0)) fail("영상 길이를 읽을 수 없습니다.");
   return { durationSec, width: Math.round(n(body.width ?? 0, "가로 크기")), height: Math.round(n(body.height ?? 0, "세로 크기")) };
+}
+
+/** 이메일 가입 (docs/decisions/0016) */
+export function parseSignup(body: unknown): SignupInput {
+  const b = obj(body);
+  const name = str(b.name, "이름", { max: 40 }).trim();
+  if (!name) fail("이름을 입력해 주세요.");
+  const email = str(b.email, "이메일", { max: 254 }).trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail("이메일 주소를 확인해 주세요.");
+  const password = str(b.password, "비밀번호", { max: 200 });
+  if (password.length < PASSWORD_MIN_LENGTH) fail(`비밀번호는 ${PASSWORD_MIN_LENGTH}자 이상이어야 합니다.`);
+  return { name, email, password };
 }
 
 /** 나눠 올리기를 시작할 때 보내는 영상 정보 */

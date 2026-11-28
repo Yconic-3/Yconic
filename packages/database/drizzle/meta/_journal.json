@@ -43,6 +43,13 @@
       "when": 1795606542483,
       "tag": "0005_movement_struggle",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795855013030,
+      "tag": "0006_signup_google",
+      "breakpoints": true
     }
   ]
 }

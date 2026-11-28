@@ -27,6 +27,8 @@ export type PageCommandHandler = (text: string) => boolean;
 
 export interface ShellApi {
   account: SignedInAccount | null;
+  /** 브라우저에 남은 로그인을 읽었는지. 읽기 전에는 account가 null이어도 로그인 전이라고 볼 수 없다 */
+  accountReady: boolean;
   /** 로그인·로그아웃 뒤 계정을 다시 읽는다 */
   refreshAccount(): void;
   /** 내 강의. 로그인하지 않았으면 null */

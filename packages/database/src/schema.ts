@@ -53,8 +53,10 @@ export const accounts = pgTable("accounts", {
   id: text("id").primaryKey(),
   email: text("email").notNull().unique(),
   name: text("name").notNull(),
-  /** scrypt 해시 (평문 비밀번호는 저장하지 않는다) */
-  passwordHash: text("password_hash").notNull(),
+  /** scrypt 해시 (평문 비밀번호는 저장하지 않는다). 구글로만 로그인하는 계정은 비어 있다 */
+  passwordHash: text("password_hash"),
+  /** 구글 계정의 고유 번호(sub). 구글로 로그인한 적이 있는 계정에만 있다 (docs/decisions/0016) */
+  googleSub: text("google_sub").unique(),
   adminRole: adminRole("admin_role"),
   createdAt: createdAt(),
 });

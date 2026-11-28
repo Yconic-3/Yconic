@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { courseLabel } from "@yconic/shared-types";
-import { safeNextPath, signOut } from "@/lib/auth";
+import { isDemoAccount, safeNextPath, signOut } from "@/lib/auth";
 import { accountLabel, LoginForm } from "@/user/components/login-form";
 import { Button, ICONS, Section } from "@/user/components/ui";
 import { createCreatorApi } from "@/user/lib/creator-api";
@@ -11,7 +11,7 @@ import { usePage, useShell } from "@/user/lib/shell";
 
 /**
  * 내 계정 (/account, 시안 D 네온 그린 · 08 로그인 기능 접근 시, 11 내 계정).
- * - 로그인 전: 저장된 계정으로 로그인. 로그인이 필요한 화면에서 넘어오면(?next=) 이유를 알리고, 로그인 뒤 그 화면으로 보낸다
+ * - 로그인 전: 구글 계정이나 이메일로 로그인, 처음이면 회원가입. 로그인이 필요한 화면에서 넘어오면(?next=) 이유를 알리고, 로그인 뒤 그 화면으로 보낸다
  * - 로그인 후: 계정 정보(계정, 내 강의, 올린 콘텐츠)와 로그아웃
  */
 export default function AccountPage() {
@@ -35,7 +35,7 @@ function Account() {
   const router = useRouter();
   const next = useSearchParams().get("next");
   const reason = reasonFor(next);
-  usePage({ mode: next?.startsWith("/my") ? "supply" : "consume", title: account ? "내 계정" : "저장된 계정으로 로그인", chips: account ? ["로그아웃", "운동하기"] : ["로그인", "운동하기"] });
+  usePage({ mode: next?.startsWith("/my") ? "supply" : "consume", title: account ? "내 계정" : "로그인", chips: account ? ["로그아웃", "운동하기"] : ["로그인", "운동하기"] });
 
   // 올린 콘텐츠 수 (로그인했을 때만)
   const [uploads, setUploads] = useState<number | null>(null);
@@ -100,7 +100,7 @@ function Account() {
       >
         로그아웃
       </Button>
-      <p className="m-0 text-[17px] text-ink-3">시연용 체험 계정입니다. 로그아웃해도 간편 로그인 정보는 남아 있어 다시 버튼만 누르면 로그인됩니다.</p>
+      {isDemoAccount(account) && <p className="m-0 text-[17px] text-ink-3">시연용 체험 계정입니다. 로그아웃해도 체험 계정 버튼을 누르면 다시 로그인됩니다.</p>}
     </Section>
   );
 }

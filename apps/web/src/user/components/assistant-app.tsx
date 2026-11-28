@@ -161,10 +161,14 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
   /** 이 틀이 직접 그리는 주소 (운동하기 홈, 운동 화면) */
   const shellRoute = pathname === "/" || routeExerciseId !== null;
   const [account, setAccount] = useState<SignedInAccount | null>(null);
+  const [accountReady, setAccountReady] = useState(false);
   const speech = useSyncExternalStore(subscribeSpeech, getSpeechState, getServerSpeechState);
 
   // 로그인 상태는 브라우저 저장소에 있으므로 화면이 뜬 뒤에 읽는다. 다른 화면에서 돌아오면 다시 읽는다.
-  const refreshAccount = useCallback(() => setAccount(readSignedInAccount()), []);
+  const refreshAccount = useCallback(() => {
+    setAccount(readSignedInAccount());
+    setAccountReady(true);
+  }, []);
   useEffect(refreshAccount, [pathname, refreshAccount]);
 
   // 내 강의: 로그인하면 불러온다. 로그인하지 않았으면 null (모든 동작을 자세하게 안내)
@@ -834,7 +838,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           openGuide(!quietRepliesRef.current, true);
           return;
         case "ACCOUNT":
-          goTo("/account", readSignedInAccount() ? "내 계정 화면입니다." : "로그인 화면입니다. 저장된 계정으로 로그인하려면 큰 로그인 버튼을 누르세요.");
+          goTo("/account", readSignedInAccount() ? "내 계정 화면입니다." : "로그인 화면입니다. 구글 계정이나 이메일로 로그인할 수 있어요. 처음이면 회원가입하기를 누르세요.");
           return;
         case "LOGOUT":
           handleLogout();
@@ -1507,6 +1511,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
   const shellApi = useMemo<ShellApi>(
     () => ({
       account,
+      accountReady,
       refreshAccount,
       learnedCourses: accountId ? learned : null,
       setLearnedCourses,
@@ -1528,7 +1533,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
         return !quiet;
       },
     }),
-    [account, accountId, exercises, learned, learning, levelOf, loadError, loadExercises, openExercise, refreshAccount, say, setLearnedCourses, setMovementKnown],
+    [account, accountReady, accountId, exercises, learned, learning, levelOf, loadError, loadExercises, openExercise, refreshAccount, say, setLearnedCourses, setMovementKnown],
   );
 
   // ── 화면에 쓸 값 ──

@@ -27,7 +27,8 @@ erDiagram
         text id PK
         text email UK
         text name
-        text password_hash
+        text password_hash "구글로만 로그인하면 null"
+        text google_sub UK "구글 계정 고유 번호. 없으면 null"
         admin_role admin_role "null이면 일반 회원"
     }
     account_courses {
@@ -111,7 +112,7 @@ erDiagram
 
 | 테이블 | 담는 것 | 쓰는 화면 |
 | --- | --- | --- |
-| `accounts` | 로그인 계정. 관리자는 `admin_role`(조회자·편집자·승인권자·최고 관리자)이 있고, 일반 회원은 비어 있다 | 로그인, 머리말의 이름, 관리자 권한 검사 |
+| `accounts` | 로그인 계정. 이메일로 가입하면 `password_hash`가, 구글로 로그인하면 `google_sub`가 있다 (0016). 관리자는 `admin_role`(조회자·편집자·승인권자·최고 관리자)이 있고, 일반 회원은 비어 있다 | 로그인, 머리말의 이름, 관리자 권한 검사 |
 | `account_courses` | 회원이 강사에게 배운 강의 (내 강의). 배운 강의의 운동은 짧게 안내한다 | 내 강의, 운동 화면의 안내 수준 |
 | `account_movements` | 회원이 아는 동작: 직접 알렸는지, 끝까지 따라 한 횟수, 강사에게 배운 용어 (0008) | 내 동작, 맞춤 안내 |
 | `personalized_guides` | AI가 회원 한 사람에 맞게 다시 쓴 단계별 안내 저장본. 학습 프로필이 바뀌면 다시 만든다 | 운동 화면의 맞춤 안내 |

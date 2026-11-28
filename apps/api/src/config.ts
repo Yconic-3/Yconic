@@ -16,6 +16,17 @@ export interface ApiConfig {
   publicLinkAdminLogin: boolean;
   /** 올린 영상 파일을 두는 폴더. 나중에 S3 호환 저장소로 바꾼다 */
   storageDir: string;
+  /** 구글 로그인에 쓰는 클라이언트 ID (공개 값). 없으면 구글 로그인을 끈다 (docs/decisions/0016) */
+  googleClientId: string | null;
+  /** 구글로 로그인하면 최고 관리자가 되는 이메일 (소문자). 이 이메일은 이메일 가입을 받지 않는다 */
+  superAdminEmails: string[];
+  /** 이메일 가입을 받는지 */
+  signup: boolean;
+  /** 한 곳(IP)에서 한 시간에 받는 가입 수, 하루 전체 가입 수 */
+  signupPerIpPerHour: number;
+  signupPerDay: number;
+  /** 로그인 화면에 체험 계정을 보여 줄지. 공개 서버에서는 끈다 (비밀번호가 공개되어 있다) */
+  demoAccounts: boolean;
   maxVideoBytes: number;
   /** 나눠 올릴 때 조각 하나의 크기. 서버 앞 프록시가 받는 크기(약 1MB)보다 작아야 한다 */
   uploadChunkBytes: number;
@@ -37,6 +48,15 @@ export function loadConfig(overrides: Partial<ApiConfig> = {}): ApiConfig {
     publicUrl: process.env.API_PUBLIC_URL ?? "/api",
     publicLinkAdminLogin: process.env.PUBLIC_LINK_ADMIN_LOGIN === "allow",
     storageDir: process.env.STORAGE_DIR ?? join(apiRoot, "storage"),
+    googleClientId: process.env.GOOGLE_CLIENT_ID?.trim() || null,
+    superAdminEmails: (process.env.SUPER_ADMIN_EMAILS ?? "")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
+    signup: process.env.SIGNUP !== "off",
+    signupPerIpPerHour: Number(process.env.SIGNUP_PER_IP_PER_HOUR ?? 10),
+    signupPerDay: Number(process.env.SIGNUP_PER_DAY ?? 300),
+    demoAccounts: process.env.DEMO_ACCOUNTS !== "off",
     maxVideoBytes: 2 * 1024 * 1024 * 1024,
     uploadChunkBytes: Number(process.env.UPLOAD_CHUNK_BYTES ?? 768 * 1024),
     sessionDays: 30,

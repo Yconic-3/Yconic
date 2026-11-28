@@ -82,6 +82,9 @@ sudo systemctl restart yconic-db yconic-api yconic-agent yconic-web
   - `ANTHROPIC_API_KEY`: 있으면 실제 영상 분석과 AI 맞춤 안내를 쓴다
   - `PYTHON`: `~/yconic-venv/bin/python`의 전체 경로
   - `AI_DAILY_LIMIT_ANALYSIS=5`, `AI_DAILY_LIMIT_GUIDES=100`
+  - `GOOGLE_CLIENT_ID`: 구글 로그인의 클라이언트 ID (아래 '구글 로그인 켜기')
+  - `SUPER_ADMIN_EMAILS`: 구글로 로그인하면 최고 관리자가 되는 이메일
+  - `DEMO_ACCOUNTS=off`: 로그인 화면에서 체험 계정을 숨긴다
 - `apps/user-agent/.env`
   - `WEB_ORIGIN`: 위와 같다
   - `ANTHROPIC_API_KEY`, `AI_DAILY_LIMIT=300`
@@ -102,13 +105,29 @@ sudo systemctl restart yconic-db yconic-api yconic-agent yconic-web
 
 `NEXT_PUBLIC_`으로 시작하는 값은 빌드할 때 들어간다. 바꾼 뒤에는 Vercel에서 다시 배포해야 한다.
 
+## 구글 로그인 켜기
+
+구글 클라우드 콘솔에서 클라이언트 ID를 만드는 일은 계정 주인이 직접 한다 (`docs/decisions/0016-회원가입과-구글-로그인.md`).
+
+1. https://console.cloud.google.com 에서 프로젝트를 만든다 (이미 있으면 고른다).
+2. **API 및 서비스 → OAuth 동의 화면**에서 앱 이름(소리벗)과 지원 이메일을 넣고, 사용자 유형을 **외부**로 한다. 누구나 로그인하게 하려면 **앱 게시**까지 한다 (게시 전에는 테스트 사용자로 넣은 계정만 된다).
+3. **API 및 서비스 → 사용자 인증 정보 → 사용자 인증 정보 만들기 → OAuth 클라이언트 ID**에서 유형을 **웹 애플리케이션**으로 고른다.
+4. **승인된 자바스크립트 원본**에 아래를 넣는다. 리디렉션 URI는 비워 둔다.
+   - `https://soribeot-yconic.vercel.app`
+   - `https://k7m4q9vz.cloud.aimple.io`
+   - `http://localhost:3000` (내 컴퓨터에서 볼 때)
+5. 만들어진 **클라이언트 ID**(`….apps.googleusercontent.com`)를 서버의 `apps/api/.env`에 `GOOGLE_CLIENT_ID=…`로 적고 `sudo systemctl restart yconic-api`를 한다. 클라이언트 보안 비밀번호는 쓰지 않는다.
+6. 로그인 화면을 새로 고치면 구글 버튼이 나온다. Vercel 환경 변수는 바꾸지 않아도 된다 (화면이 API에 물어본다).
+
 ## 관리자 계정
 
+- **`SUPER_ADMIN_EMAILS`에 적은 구글 계정으로 로그인하면 최고 관리자가 된다.** 평소에는 이 길로 들어온다. 관리자를 더하려면 이메일을 쉼표로 이어 적고 API를 다시 켠다.
+
 - 저장소가 공개라 예시 관리자 계정의 비밀번호도 공개되어 있다. API는 Cloudflare 임시 링크로 들어온 경우에만 관리자 로그인을 막는다 (결정 0010). 이 서버와 Vercel 주소는 그 대상이 아니다.
-- 그래서 **서버 DB의 관리자 비밀번호 4개를 무작위 값으로 바꿨다.** 새 비밀번호는 서버의 `~/yconic-admin-passwords.txt`에만 있다.
-- **서버에서 `pnpm db:seed`를 실행하면 안 된다.** 데이터가 모두 지워지고 관리자 비밀번호가 공개된 값으로 돌아간다. 실행했다면 바로 비밀번호를 다시 바꾼다.
-- 화면의 체험 계정에는 일반 회원만 보인다 (`NEXT_PUBLIC_SHARE_MODE=1`). 관리자는 이메일과 새 비밀번호를 직접 입력한다.
-- 체험 회원 계정의 비밀번호는 공개된 그대로다. 누구나 로그인해 영상을 올리고 검수를 요청할 수 있다. 공개는 승인권자만 한다.
+- 그래서 **서버 DB의 예시 계정 5개(관리자 4개, 체험 회원 1개)의 비밀번호를 무작위 값으로 바꿨다.** 새 비밀번호는 서버의 `~/yconic-admin-passwords.txt`에만 있다.
+- **서버에서 `pnpm db:seed`를 실행하면 안 된다.** 가입한 회원을 포함해 데이터가 모두 지워지고 예시 계정의 비밀번호가 공개된 값으로 돌아간다. 실행했다면 바로 비밀번호를 다시 바꾼다.
+- 로그인 화면에 체험 계정은 보이지 않는다 (`DEMO_ACCOUNTS=off`). 체험 회원 계정의 비밀번호도 서버에서 바꿨다. 예시 계정으로 들어가야 하면 이메일과 새 비밀번호를 직접 입력한다.
+- 누구나 가입해 영상을 올리고 검수를 요청할 수 있다. 공개는 승인권자만 한다. 자기 승인 금지는 그대로다.
 
 ## 알려진 제한
 

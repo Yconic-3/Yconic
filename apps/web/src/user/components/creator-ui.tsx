@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { CONTENT_STATUS_LABELS, type ContentStatus, type MyContent } from "@yconic/shared-types";
+import { useShell } from "@/user/lib/shell";
 
 /** 올린 사람에게 보여 줄 상태 설명 */
 export function creatorStatusNote(c: Pick<MyContent, "status" | "reviewComment">): string {
@@ -24,12 +25,15 @@ export function creatorStatusLine(c: Pick<MyContent, "status" | "reviewComment">
 /**
  * 로그인이 필요한 화면(콘텐츠 올리기, 내 강의)에서 로그인 전이면 로그인 화면으로 보낸다 (시안 D 흐름 B2).
  * 로그인하면 원래 가려던 화면으로 돌아온다 (/account?next=).
+ * 브라우저에 남은 로그인을 읽기 전에는 보내지 않는다 (새로 고치면 로그인되어 있어도 로그인 화면으로 가던 문제).
  */
 export function LoginRequired() {
   const router = useRouter();
   const pathname = usePathname() ?? "/";
+  const { accountReady } = useShell();
   useEffect(() => {
-    router.replace(`/account?next=${encodeURIComponent(pathname)}`);
-  }, [pathname, router]);
+    if (accountReady) router.replace(`/account?next=${encodeURIComponent(pathname)}`);
+  }, [accountReady, pathname, router]);
+  if (!accountReady) return null;
   return <p className="m-0 text-[18px] text-ink-2">로그인 화면으로 가는 중이에요.</p>;
 }
