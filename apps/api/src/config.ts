@@ -36,8 +36,10 @@ export interface ApiConfig {
   ttsPerIpPerMinute: number;
   ttsDailyChars: number;
   maxVideoBytes: number;
-  /** 나눠 올릴 때 조각 하나의 크기. 서버 앞 프록시가 받는 크기(약 1MB)보다 작아야 한다 */
+  /** 나눠 올릴 때 조각 하나의 크기. 서버 앞 프록시가 받는 크기(1MiB = 1,048,576바이트)보다 작아야 한다 */
   uploadChunkBytes: number;
+  /** 화면이 조각을 직접 보낼 이 서버의 바깥 주소 (예: https://서버/api). 없으면 시작한 주소 그대로 보낸다 (0022) */
+  uploadPublicUrl: string | null;
   /** 로그인 유지를 켰을 때 로그인이 남는 날 수. 쓰는 동안 계속 늘어난다 */
   sessionDays: number;
   /** 로그인 유지를 껐을 때 서버에 로그인이 남는 시간 */
@@ -74,7 +76,8 @@ export function loadConfig(overrides: Partial<ApiConfig> = {}): ApiConfig {
     ttsPerIpPerMinute: Number(process.env.TTS_PER_IP_PER_MINUTE ?? 60),
     ttsDailyChars: Number(process.env.TTS_DAILY_CHARS ?? 30000),
     maxVideoBytes: 2 * 1024 * 1024 * 1024,
-    uploadChunkBytes: Number(process.env.UPLOAD_CHUNK_BYTES ?? 768 * 1024),
+    uploadChunkBytes: Number(process.env.UPLOAD_CHUNK_BYTES ?? 1_000_000),
+    uploadPublicUrl: process.env.UPLOAD_PUBLIC_URL?.trim().replace(/\/+$/, "") || null,
     sessionDays: 30,
     shortSessionHours: 24,
     jobStageMs: Number(process.env.JOB_STAGE_MS ?? 2500),

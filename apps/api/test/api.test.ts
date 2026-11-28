@@ -417,6 +417,7 @@ describe("영상 나눠 올리기", () => {
 
   beforeEach(() => {
     s.config.uploadChunkBytes = CHUNK;
+    s.config.uploadPublicUrl = null;
   });
 
   it("회원이 조각으로 나눠 올리면 서버가 합쳐서 영상으로 기록한다", async () => {
@@ -425,7 +426,7 @@ describe("영상 나눠 올리기", () => {
     const data = bytes(1000);
     const start = await me.post("/me/uploads", meta(data.length));
     expect(start.status).toBe(201);
-    expect(start.body).toMatchObject({ chunkBytes: CHUNK, chunkCount: 3 });
+    expect(start.body).toMatchObject({ chunkBytes: CHUNK, chunkCount: 3, uploadUrl: null });
     const id = start.body.id as string;
 
     expect(await (await putChunk(token, "/me", id, 0, data.subarray(0, 400))).json()).toEqual({ receivedBytes: 400 });
@@ -433,7 +434,9 @@ describe("영상 나눠 올리기", () => {
     expect(await (await putChunk(token, "/me", id, 0, data.subarray(0, 400))).json()).toEqual({ receivedBytes: 400 });
     expect((await putChunk(token, "/me", id, 1, data.subarray(400, 800))).status).toBe(200);
     // 다 올리기 전에는 끝낼 수 없다
-    expect((await me.post(`/me/uploads/${id}/complete`)).status).toBe(400);
+    const early = await me.post(`/me/uploads/${id}/complete`);
+    expect(early.status).toBe(400);
+    expect(early.body.message).toMatch(/3개 중 2개/);
     expect(await (await putChunk(token, "/me", id, 2, data.subarray(800))).json()).toEqual({ receivedBytes: 1000 });
 
     const done = await me.post<VideoAsset>(`/me/uploads/${id}/complete`);
@@ -443,26 +446,70 @@ describe("영상 나눠 올리기", () => {
     expect(Buffer.from(saved).equals(Buffer.from(data))).toBe(true);
     // 끝난 올리기는 사라진다
     expect((await me.post(`/me/uploads/${id}/complete`)).status).toBe(404);
+    expect((await me.get(`/me/uploads/${id}`)).status).toBe(404);
     // 올린 영상으로 제작을 요청할 수 있다
     const job = await me.post("/me/content-jobs", { videoId: done.body.id, title: "나눠 올린 영상", category: "STRENGTH", difficulty: "BEGINNER", requestNote: "" });
     expect(job.status).toBe(201);
   });
 
-  it("순서가 틀리거나 크기가 틀린 조각은 받지 않는다", async () => {
+  it("조각은 어떤 순서로, 동시에 보내도 번호 순서대로 합친다", async () => {
+    const token = await tokenOf("member@example.com", "member1234");
+    const me = client(s.baseUrl, token);
+    const data = bytes(2350);
+    const id = (await me.post("/me/uploads", meta(data.length))).body.id as string;
+    // 6개 조각을 뒤섞어 한꺼번에 보낸다
+    const order = [4, 1, 5, 0, 3, 2];
+    const results = await Promise.all(order.map((i) => putChunk(token, "/me", id, i, data.subarray(i * CHUNK, Math.min((i + 1) * CHUNK, data.length)))));
+    expect(results.map((r) => r.status)).toEqual([200, 200, 200, 200, 200, 200]);
+    const done = await me.post<VideoAsset>(`/me/uploads/${id}/complete`);
+    expect(done.status).toBe(201);
+    const saved = new Uint8Array(await (await fetch(done.body.url!)).arrayBuffer());
+    expect(Buffer.from(saved).equals(Buffer.from(data))).toBe(true);
+  });
+
+  it("어디까지 받았는지 알려 준다 (끊겼다가 이어 올릴 때 쓴다)", async () => {
     const token = await tokenOf("member@example.com", "member1234");
     const me = client(s.baseUrl, token);
     const data = bytes(1000);
     const id = (await me.post("/me/uploads", meta(data.length))).body.id as string;
-    // 0번을 건너뛰고 1번부터
-    expect((await putChunk(token, "/me", id, 1, data.subarray(400, 800))).status).toBe(409);
-    // 크기가 다르다
+    expect((await me.get(`/me/uploads/${id}`)).body).toEqual({ id, sizeBytes: 1000, chunkBytes: CHUNK, chunkCount: 3, received: [], uploadUrl: null });
+    await putChunk(token, "/me", id, 2, data.subarray(800));
+    await putChunk(token, "/me", id, 0, data.subarray(0, 400));
+    expect((await me.get(`/me/uploads/${id}`)).body.received).toEqual([0, 2]);
+    // 빠진 조각만 마저 보내고 끝낸다
+    await putChunk(token, "/me", id, 1, data.subarray(400, 800));
+    const done = await me.post<VideoAsset>(`/me/uploads/${id}/complete`);
+    expect(done.status).toBe(201);
+    expect(Buffer.from(new Uint8Array(await (await fetch(done.body.url!)).arrayBuffer())).equals(Buffer.from(data))).toBe(true);
+  });
+
+  it("서버를 직접 부르는 주소가 정해져 있으면 조각을 보낼 주소를 알려 준다", async () => {
+    s.config.uploadPublicUrl = "https://server.example/api";
+    const me = await login(s.baseUrl, "member@example.com", "member1234");
+    const start = await me.post("/me/uploads", meta(10));
+    expect(start.body.uploadUrl).toBe(`https://server.example/api/me/uploads/${start.body.id}`);
+    expect((await me.get(`/me/uploads/${start.body.id}`)).body.uploadUrl).toBe(start.body.uploadUrl);
+    const ed = await login(s.baseUrl, "editor@example.com", "editor1234");
+    const adminStart = await ed.post("/admin/uploads", meta(10));
+    expect(adminStart.body.uploadUrl).toBe(`https://server.example/api/admin/uploads/${adminStart.body.id}`);
+  });
+
+  it("크기가 틀린 조각, 없는 번호, 조각이 아닌 본문은 받지 않는다", async () => {
+    const token = await tokenOf("member@example.com", "member1234");
+    const me = client(s.baseUrl, token);
+    const data = bytes(1000);
+    const id = (await me.post("/me/uploads", meta(data.length))).body.id as string;
+    // 크기가 다르다 (가운데 조각은 꼭 조각 크기여야 하고, 마지막 조각은 남은 만큼이어야 한다)
     expect((await putChunk(token, "/me", id, 0, data.subarray(0, 399))).status).toBe(400);
+    expect((await putChunk(token, "/me", id, 2, data.subarray(0, 400))).status).toBe(400);
     // 없는 번호
     expect((await putChunk(token, "/me", id, 3, data.subarray(0, 400))).status).toBe(400);
+    expect((await putChunk(token, "/me", id, -1, data.subarray(0, 400))).status).toBe(400);
     // 조각이 아닌 본문
     expect((await putChunk(token, "/me", id, 0, data.subarray(0, 400), "text/plain")).status).toBe(400);
     // 조각 크기보다 훨씬 큰 본문은 받지 않는다
     expect((await putChunk(token, "/me", id, 0, new Uint8Array(2 * 1024 * 1024))).status).toBe(413);
+    expect((await me.get(`/me/uploads/${id}`)).body.received).toEqual([]);
   });
 
   it("영상이 아니거나 너무 크면 시작할 수 없고, 남의 올리기는 보이지 않는다", async () => {
@@ -476,6 +523,7 @@ describe("영상 나눠 올리기", () => {
     const id = (await me.post("/me/uploads", meta(10))).body.id as string;
     const other = await tokenOf("editor@example.com", "editor1234");
     expect((await putChunk(other, "/me", id, 0, bytes(10))).status).toBe(404);
+    expect((await client(s.baseUrl, other).get(`/me/uploads/${id}`)).status).toBe(404);
     expect((await client(s.baseUrl, other).post(`/me/uploads/${id}/complete`)).status).toBe(404);
     expect((await me.post("/me/uploads/..%2F..%2Fvideos/complete")).status).toBe(404);
 
@@ -503,8 +551,9 @@ describe("영상 나눠 올리기", () => {
     const ed = client(s.baseUrl, token);
     const data = bytes(500);
     const id = (await ed.post("/admin/uploads", meta(data.length))).body.id as string;
-    expect((await putChunk(token, "/admin", id, 0, data.subarray(0, 400))).status).toBe(200);
     expect((await putChunk(token, "/admin", id, 1, data.subarray(400))).status).toBe(200);
+    expect((await ed.get(`/admin/uploads/${id}`)).body.received).toEqual([1]);
+    expect((await putChunk(token, "/admin", id, 0, data.subarray(0, 400))).status).toBe(200);
     const done = await ed.post<VideoAsset>(`/admin/uploads/${id}/complete`);
     expect(done.status).toBe(201);
     expect(done.body).toMatchObject({ sizeBytes: 500, uploadedBy: "u-editor" });

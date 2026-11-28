@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Put, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import type { AuthAccount, ContentJob, LearningProfile, MyContent, MyCourses, PersonalizedGuides, UploadProgress, UploadSession, VideoAsset } from "@yconic/shared-types";
+import type { AuthAccount, ContentJob, LearningProfile, MyContent, MyCourses, PersonalizedGuides, UploadProgress, UploadSession, UploadStatus, VideoAsset } from "@yconic/shared-types";
 import { parseCreateJob, parseCreateUpload, parseMyCourses, parseRecordPractice, parseSetMovement, parseSubmitMy, parseUpdateMyGuides, parseVideoMeta } from "../admin/validate";
 import { AuthGuard, CurrentAccount } from "../auth/guards";
 import type { UploadedVideoFile } from "../content/content.ops";
@@ -74,6 +74,11 @@ export class MeController {
   @Post("uploads")
   startUpload(@CurrentAccount() account: AuthAccount, @Body() body: unknown): Promise<UploadSession> {
     return this.me.startUpload(account, parseCreateUpload(body));
+  }
+
+  @Get("uploads/:id")
+  uploadStatus(@CurrentAccount() account: AuthAccount, @Param("id") id: string): Promise<UploadStatus> {
+    return this.me.uploadStatus(account, id);
   }
 
   @Put("uploads/:id/chunks/:index")
