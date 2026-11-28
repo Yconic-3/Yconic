@@ -73,6 +73,9 @@ describe("parseIntent", () => {
 
   it("도움말과 알 수 없는 말", () => {
     expect(parse("도움말")).toEqual({ type: "HELP" });
+    // 사용법 안내를 다시 여는 말 (docs/decisions/0013)
+    expect(parse("사용법 알려줘")).toEqual({ type: "HELP" });
+    expect(parse("어떻게 쓰는 법이야")).toEqual({ type: "HELP" });
     expect(parse("오늘 날씨 어때")).toEqual({ type: "UNKNOWN" });
     expect(parse("   ")).toEqual({ type: "UNKNOWN" });
   });

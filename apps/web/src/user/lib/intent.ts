@@ -87,7 +87,7 @@ const PREVIOUS_WORDS = ["이전", "뒤로"];
 const REPEAT_WORDS = ["다시", "반복", "한 번 더", "한번 더"];
 const SLOWER_WORDS = ["느리게", "천천히"];
 const FASTER_WORDS = ["빠르게", "빨리"];
-const HELP_WORDS = ["도움", "어떻게 말", "뭐라고 말", "명령"];
+const HELP_WORDS = ["도움", "어떻게 말", "뭐라고 말", "명령", "사용법", "사용 방법", "쓰는 법", "쓰는 방법", "가이드"];
 
 /** 제목에서 운동을 구분하는 데 도움이 안 되는 말 */
 const GENERIC_TITLE_WORDS = new Set(["운동", "하는", "하기", "잡고", "앉아서", "서서"]);

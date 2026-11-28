@@ -38,6 +38,8 @@ import { micPermissionText, requestMicPermission, watchMicPermission, type MicPe
 import { startListening, type Listener, type ListenError } from "@/user/lib/recognition";
 import { playEarcon } from "@/user/lib/earcon";
 import { FONT_CHOICES, nearestChoice, RATE_CHOICES, SettingsDialog } from "./settings-dialog";
+import { GuideDialog } from "./guide-dialog";
+import { EXERCISE_TIP, GUIDE_SPEECH_BODY, GUIDE_SPEECH_END, isGuideSkip, markIntroSeen, markTipSeen, readGuideSeen } from "@/user/lib/guide";
 import { afterWakeWord, ARM_MS, createCommandGate, WAKE_WORD } from "@/user/lib/wake-word";
 import { classifyAnswer } from "@/user/lib/confirm";
 import { readHistory, recommendNext, recordCompletion, timesDone } from "@/user/lib/history";
@@ -355,6 +357,59 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     [addMessage],
   );
 
+  // ── 사용법 안내 (docs/decisions/0013): 처음 한 번만 저절로 뜨고, 그 뒤로는 부를 때만 연다 ──
+  const [guide, setGuide] = useState<"first" | "replay" | null>(null);
+  const guideRef = useRef(guide);
+  guideRef.current = guide;
+  const [guideSpeaking, setGuideSpeaking] = useState(false);
+  /** 지금 읽고 있는 안내의 번호. 닫거나 새로 읽으면 올려서 앞의 읽기가 끝난 것을 무시한다 */
+  const guideSpeechSeq = useRef(0);
+  const guideSpeakingRef = useRef(false);
+  const helpButtonRef = useRef<HTMLButtonElement | null>(null);
+  /** 운동 화면을 처음 열 때 한 번만 보여 주는 한 줄 안내 */
+  const [exerciseTip, setExerciseTip] = useState(false);
+  useEffect(() => {
+    if (!readGuideSeen().intro) setGuide("first");
+  }, []);
+  const closeGuide = useCallback(() => {
+    const kind = guideRef.current;
+    if (!kind) return;
+    guideSpeechSeq.current++;
+    const wasSpeaking = guideSpeakingRef.current;
+    guideSpeakingRef.current = false;
+    setGuideSpeaking(false);
+    if (wasSpeaking) stopSpeaking();
+    markIntroSeen();
+    guideRef.current = null;
+    setGuide(null);
+    // 닫으면 초점을 돌려준다 (처음 안내는 화면 제목으로, 다시 연 것은 물음표 버튼으로)
+    window.setTimeout(() => (kind === "first" ? headingRef.current : helpButtonRef.current)?.focus({ preventScroll: true }), 0);
+  }, []);
+  /** 사용법을 소리로 읽고, 다 읽으면 창을 닫는다. full이면 말할 수 있는 말까지 모두 읽는다 */
+  const listenGuide = useCallback(
+    (full: boolean) => {
+      const seq = ++guideSpeechSeq.current;
+      guideSpeakingRef.current = true;
+      setGuideSpeaking(true);
+      void speak(full ? `${GUIDE_SPEECH_BODY} ${HELP_MESSAGE}` : `${GUIDE_SPEECH_BODY} ${GUIDE_SPEECH_END}`, { rate: rateRef.current }).then((finished) => {
+        if (seq !== guideSpeechSeq.current) return;
+        guideSpeakingRef.current = false;
+        setGuideSpeaking(false);
+        if (finished) closeGuide();
+      });
+    },
+    [closeGuide],
+  );
+  /** 사용법을 다시 연다 (물음표 버튼, "사용법 알려줘", 설정). listen이면 음성 안내가 켜져 있을 때 바로 읽는다 */
+  const openGuide = useCallback(
+    (listen: boolean, full = false) => {
+      guideRef.current = "replay";
+      setGuide("replay");
+      if (listen && speechEnabledRef.current) listenGuide(full);
+    },
+    [listenGuide],
+  );
+
   // ── 묻고 기다리기 (docs/decisions/0012): 단계를 넘기거나 화면을 바꾸기 전에 묻고 대답을 기다린다 ──
   const pendingConfirmRef = useRef<{ yes: () => void; no?: () => void } | null>(null);
   // 묻고 기다리는 동안에는 화면에 네·아니요 버튼도 보여 준다 (말로 대답하지 않아도 눌러서 넘어갈 수 있게)
@@ -570,6 +625,12 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
     quietIntroRef.current = false;
     const timer = window.setTimeout(() => {
       if (cancelled) return;
+      // 운동 화면을 처음 연 사람에게는 운동 중에 할 수 있는 말을 한 번만 알려 준다 (docs/decisions/0013)
+      const tip = readGuideSeen().tips.includes("exercise") ? "" : EXERCISE_TIP;
+      if (tip) {
+        markTipSeen("exercise");
+        setExerciseTip(true);
+      }
       if (quiet) {
         if (autoplay) sessionRef.current.start();
         return;
@@ -577,7 +638,10 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
       // 왜 짧게/자세하게 안내하는지 먼저 알린다 (내 동작)
       const why = guideIntro(exercise, profileRef.current);
       // 시안 D 흐름 A3: 고르면 먼저 묻는다. "네"나 "시작"이라고 하면 시작한다
-      void say(autoplay ? `${eulReul(exercise.title)} 시작합니다. ${why}` : `${exercise.title} 안내를 시작할까요? ${why} “네” 또는 “시작”이라고 말해 주세요.`).then((finished) => {
+      const intro = autoplay
+        ? [`${eulReul(exercise.title)} 시작합니다.`, why, tip]
+        : [`${exercise.title} 안내를 시작할까요?`, why, tip, "“네” 또는 “시작”이라고 말해 주세요."];
+      void say(intro.filter(Boolean).join(" ")).then((finished) => {
         // 안내를 다 읽기 전에 사용자가 다른 말을 했으면 바로 시작하지 않는다
         if (!cancelled && autoplay && finished) sessionRef.current.start();
       });
@@ -765,7 +829,9 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           handleBack();
           return;
         case "HELP":
-          void say(HELP_MESSAGE);
+          // 글로 물었으면 화면에만 띄우고, 말로 물었으면 말할 수 있는 말까지 읽어 준다
+          if (quietRepliesRef.current) void say("사용법을 화면에 띄웠어요.");
+          openGuide(!quietRepliesRef.current, true);
           return;
         case "ACCOUNT":
           goTo("/account", readSignedInAccount() ? "내 계정 화면입니다." : "로그인 화면입니다. 저장된 계정으로 로그인하려면 큰 로그인 버튼을 누르세요.");
@@ -916,7 +982,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
         }
       }
     },
-    [askMicPermission, changeRate, exercise, exercises, goSearch, goTo, handleBack, handleHome, handleLogout, learned, mode, noteStruggle, openExercise, say, setLearnedCourses, setMovementKnown, setTts, toggleTtsPause],
+    [askMicPermission, changeRate, exercise, exercises, goSearch, goTo, handleBack, handleHome, handleLogout, learned, mode, noteStruggle, openExercise, openGuide, say, setLearnedCourses, setMovementKnown, setTts, toggleTtsPause],
   );
 
   /**
@@ -1072,6 +1138,14 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
         runIntent(intent);
         return;
       }
+      // 사용법 안내가 떠 있으면 닫는다. "건너뛰기"처럼 그만 보겠다는 말이면 거기서 끝낸다
+      if (guideRef.current) {
+        closeGuide();
+        if (isGuideSkip(text)) {
+          setThinking(false);
+          return;
+        }
+      }
       // 물어본 것에 대한 대답이면 그대로 한다 ("네", "아니")
       const pending = pendingConfirmRef.current;
       setPendingConfirm(null);
@@ -1141,7 +1215,7 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
         })
         .then(finish, () => finish(null));
     },
-    [accountId, addMessage, agent, exercise, exercises, guideOf, learning, mode, noteStruggle, pathname, routeExerciseId, runAgentResponse, runIntentAsking, say, setPendingConfirm, view],
+    [accountId, addMessage, agent, closeGuide, exercise, exercises, guideOf, learning, mode, noteStruggle, pathname, routeExerciseId, runAgentResponse, runIntentAsking, say, setPendingConfirm, view],
   );
 
   const handleCommandRef = useRef(handleCommand);
@@ -1404,6 +1478,10 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
   };
   // 다른 화면으로 가면 닫는다
   useEffect(() => setSettingsOpen(false), [pathname]);
+  // 운동 화면을 떠나면 한 줄 안내도 치운다
+  useEffect(() => {
+    if (routeExerciseId === null) setExerciseTip(false);
+  }, [routeExerciseId]);
 
   /** 읽기 속도를 정해진 값으로 바꾼다 (설정 창의 느리게·보통·빠르게) */
   const setRateTo = useCallback(
@@ -1748,6 +1826,14 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
                 onClick={() => setTts(!speech.enabled)}
               />
               <HeaderIcon
+                ref={helpButtonRef}
+                tone="ink"
+                icon={ICONS.help}
+                label="사용법"
+                expanded={guide !== null}
+                onClick={() => (guide ? closeGuide() : openGuide(true))}
+              />
+              <HeaderIcon
                 ref={settingsButtonRef}
                 tone="ink"
                 icon={settingsOpen ? ICONS.close : ICONS.gear}
@@ -1787,6 +1873,21 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
                   </h1>
                 </div>
                 {!isWatch && guideBox}
+                {isWatch && exerciseTip && (
+                  <div className="flex items-start gap-3 rounded-2xl border-2 border-info bg-panel px-[18px] py-4">
+                    <p className="m-0 flex-1 text-[18px] leading-[1.55] text-ink">
+                      <span className="font-bold text-info">처음이라면.</span> {EXERCISE_TIP}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setExerciseTip(false)}
+                      aria-label="이 안내 닫기"
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border-2 border-control bg-bg text-ink hover:border-accent hover:bg-hover"
+                    >
+                      <Icon d={ICONS.close} size={22} />
+                    </button>
+                  </div>
+                )}
                 {isWatch && watchBody}
                 {isWatch && watchControls}
                 {isWatch && (
@@ -1862,6 +1963,15 @@ export function AssistantApp({ children }: { children?: ReactNode }) {
           onAccount={() => fromSettings(() => router.push("/account"))}
           onAdmin={() => fromSettings(() => router.push("/admin"))}
           onLogout={() => fromSettings(handleLogout)}
+          onGuide={() => fromSettings(() => openGuide(true))}
+        />
+        <GuideDialog
+          open={guide !== null}
+          first={guide === "first"}
+          speechEnabled={speech.enabled}
+          speaking={guideSpeaking}
+          onListen={() => listenGuide(false)}
+          onClose={closeGuide}
         />
       </div>
     </ShellContext.Provider>
