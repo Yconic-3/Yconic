@@ -4,8 +4,8 @@ import { AppShell } from "@/admin/components/app-shell";
 import { SessionProvider } from "@/admin/lib/session";
 
 export const metadata: Metadata = {
-  title: { default: "Yconic 관리자", template: "%s · Yconic 관리자" },
-  description: "시각장애인 AI 운동 지원 플랫폼 콘텐츠 관리",
+  title: { default: "소리벗 관리자", template: "%s · 소리벗 관리자" },
+  description: "소리벗 운동 콘텐츠 관리",
 };
 
 /**

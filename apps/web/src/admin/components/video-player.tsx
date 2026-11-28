@@ -210,7 +210,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
             ) : (
               <>
                 <p>이 콘텐츠에는 영상 파일이 없습니다. 재생하면 영상 없이 시간만 흘러 구간 안내를 확인할 수 있습니다.</p>
-                <button type="button" onClick={() => handle.togglePlay()} className="rounded-md bg-white/15 px-4 py-2 font-medium text-white hover:bg-white/25">
+                <button type="button" onClick={() => handle.togglePlay()} className="rounded-xl bg-ink/15 px-4 py-2 font-bold text-ink hover:bg-ink/25">
                   {playing ? "❚❚ 정지" : "▶ 시간만 재생"}
                 </button>
               </>
